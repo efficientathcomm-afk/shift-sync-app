@@ -25,7 +25,10 @@ import {
   LogOut,
   Edit3,
   Archive,
-  Check
+  Check,
+  Star,
+  Printer,
+  TrendingUp
 } from 'lucide-react';
 
 // Firebase Configuration
@@ -99,6 +102,11 @@ export default function App() {
   });
 
   const [editingShift, setEditingShift] = useState(null);
+
+  // Print function for Worker Schedule Report
+  const handlePrintSchedule = () => {
+    window.print();
+  };
 
   // Load / sync collections with Firestore or state fallbacks
   useEffect(() => {
@@ -356,23 +364,26 @@ export default function App() {
   // Manager schedule metrics
   const scheduleHealthSummary = useMemo(() => {
     let totalNeeded = 0;
+    let totalTarget = 0;
     let totalAssigned = 0;
     shifts.forEach(s => {
-      totalNeeded += s.requiredCount;
+      totalNeeded += (s.requiredCount || 0);
+      totalTarget += (s.idealCount || s.requiredCount || 0);
       totalAssigned += (s.assignedWorkerIds?.length || 0);
     });
     return {
       totalShifts: shifts.length,
       totalNeeded,
+      totalTarget,
       totalAssigned,
-      coveragePercent: totalNeeded === 0 ? 100 : Math.round((totalAssigned / totalNeeded) * 100)
+      coveragePercent: totalNeeded === 0 ? 100 : Math.min(100, Math.round((totalAssigned / totalNeeded) * 100))
     };
   }, [shifts]);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased pb-12">
+    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased pb-12 print:bg-white print:pb-0">
       {/* HEADER NAVBAR */}
-      <header className="bg-slate-900 text-white shadow-md sticky top-0 z-30">
+      <header className="bg-slate-900 text-white shadow-md sticky top-0 z-30 print:hidden">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-indigo-600 rounded-xl shadow-inner">
@@ -414,20 +425,52 @@ export default function App() {
         </div>
       </header>
 
+      {/* UPCOMING SHIFT COVERAGE STATUS BAR AT TOP */}
+      <div className="bg-slate-800 text-slate-200 border-b border-slate-700 py-2.5 px-4 print:hidden">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-medium">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="w-4 h-4 text-indigo-400" />
+            <span className="font-bold text-white">Upcoming Shift Coverage Status:</span>
+            <span>
+              <strong className="text-emerald-400">{scheduleHealthSummary.totalAssigned}</strong> assigned of{' '}
+              <strong className="text-slate-300">{scheduleHealthSummary.totalNeeded} required</strong>{' '}
+              (Target: <strong className="text-indigo-300">{scheduleHealthSummary.totalTarget}</strong>)
+            </span>
+          </div>
+          <div className="flex items-center space-x-3 w-full sm:w-48">
+            <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 ${
+                  scheduleHealthSummary.coveragePercent >= 100 
+                    ? 'bg-emerald-500' 
+                    : scheduleHealthSummary.coveragePercent >= 50 
+                    ? 'bg-indigo-500' 
+                    : 'bg-amber-500'
+                }`} 
+                style={{ width: `${Math.min(100, scheduleHealthSummary.coveragePercent)}%` }}
+              ></div>
+            </div>
+            <span className="font-extrabold text-white text-[11px] min-w-[36px] text-right">
+              {scheduleHealthSummary.coveragePercent}%
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* SUBMISSION NOTIFICATION BANNER */}
       {submissionSuccess && (
-        <div className="bg-emerald-600 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center space-x-2 animate-fade-in">
+        <div className="bg-emerald-600 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center space-x-2 animate-fade-in print:hidden">
           <Check className="w-4 h-4" />
           <span>Availability saved successfully! Your preferences have been registered.</span>
         </div>
       )}
 
       {/* MAIN CONTAINER */}
-      <main className="max-w-6xl mx-auto px-4 pt-6">
+      <main className="max-w-6xl mx-auto px-4 pt-6 print:p-0">
 
         {/* WORKER VIEW TAB */}
         {activeTab === 'worker' && (
-          <div className="space-y-6">
+          <div className="space-y-6 print:hidden">
             <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Worker Portal</span>
@@ -463,7 +506,7 @@ export default function App() {
                   className="inline-flex items-center justify-center space-x-1.5 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-4 py-3 rounded-xl transition border border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>My Assigned Shifts</span>
+                  <span>My Schedule Report</span>
                 </button>
               </div>
             </div>
@@ -573,6 +616,10 @@ export default function App() {
                     {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
                       const isAssigned = shift.assignedWorkerIds?.includes(currentWorker.id);
+                      const assignedWorkers = workers.filter(w => shift.assignedWorkerIds?.includes(w.id));
+                      const assignedCount = assignedWorkers.length;
+                      const requiredCount = shift.requiredCount || 1;
+                      const targetCount = shift.idealCount || requiredCount;
 
                       return (
                         <div 
@@ -606,31 +653,86 @@ export default function App() {
                                 <span>{shift.location}</span>
                               </p>
                             </div>
+
+                            {/* STAFFING PROGRESS BAR FOR WORKERS */}
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
+                              <div className="flex justify-between items-center text-[11px]">
+                                <span className="font-bold text-slate-600">Staffing Progress:</span>
+                                <span className="font-extrabold text-slate-800">
+                                  {assignedCount} / {requiredCount} req (Target: {targetCount})
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all ${
+                                    assignedCount >= requiredCount ? 'bg-emerald-500' : 'bg-indigo-500'
+                                  }`}
+                                  style={{ width: `${Math.min(100, (assignedCount / targetCount) * 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+
+                            {/* STAFF ALREADY ASSIGNED TO SHIFT */}
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                Assigned Staff ({assignedWorkers.length}):
+                              </span>
+                              {assignedWorkers.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic">No staff assigned yet</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {assignedWorkers.map(w => (
+                                    <span 
+                                      key={w.id} 
+                                      className={`text-[11px] font-medium px-2 py-0.5 rounded-md ${
+                                        w.id === currentWorker.id 
+                                          ? 'bg-indigo-600 text-white font-bold' 
+                                          : 'bg-slate-100 text-slate-700'
+                                      }`}
+                                    >
+                                      {w.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
 
+                          {/* PREFERRED OPTION WITH AVAILABLE/UNAVAILABLE */}
                           <div className="pt-4 border-t border-slate-100 mt-4 space-y-2">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-1.5">
                               <button
                                 onClick={() => handleAvailabilityToggle(shift.id, 'available')}
-                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1 border transition ${
+                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
                                   workerStatus === 'available'
                                     ? 'bg-emerald-600 text-white border-emerald-600'
                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                 }`}
                               >
-                                <CheckCircle className="w-3.5 h-3.5" />
+                                <CheckCircle className="w-3 h-3" />
                                 <span>Available</span>
                               </button>
                               <button
+                                onClick={() => handleAvailabilityToggle(shift.id, 'preferred')}
+                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                  workerStatus === 'preferred'
+                                    ? 'bg-amber-500 text-white border-amber-500'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                <Star className="w-3 h-3 fill-current" />
+                                <span>Preferred</span>
+                              </button>
+                              <button
                                 onClick={() => handleAvailabilityToggle(shift.id, 'unavailable')}
-                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1 border transition ${
+                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
                                   workerStatus === 'unavailable'
                                     ? 'bg-rose-600 text-white border-rose-600'
                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                                 }`}
                               >
-                                <XCircle className="w-3.5 h-3.5" />
+                                <XCircle className="w-3 h-3" />
                                 <span>Unavailable</span>
                               </button>
                             </div>
@@ -647,7 +749,7 @@ export default function App() {
 
         {/* MANAGER VIEW TAB */}
         {activeTab === 'manager' && (
-          <div className="space-y-6">
+          <div className="space-y-6 print:hidden">
             <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Manager Control Center</span>
@@ -731,23 +833,27 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* MANAGER STATS SUMMARY */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* MANAGER STATS SUMMARY WITH TARGET EMPLOYEES */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                     <span className="text-[11px] font-bold text-slate-400 uppercase">Active Shifts</span>
                     <p className="text-xl font-black text-slate-900 mt-1">{scheduleHealthSummary.totalShifts}</p>
                   </div>
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">Staff Required</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Required Staff</span>
                     <p className="text-xl font-black text-slate-900 mt-1">{scheduleHealthSummary.totalNeeded}</p>
                   </div>
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Target Staff</span>
+                    <p className="text-xl font-black text-indigo-600 mt-1">{scheduleHealthSummary.totalTarget}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                     <span className="text-[11px] font-bold text-slate-400 uppercase">Positions Filled</span>
-                    <p className="text-xl font-black text-indigo-600 mt-1">{scheduleHealthSummary.totalAssigned}</p>
+                    <p className="text-xl font-black text-emerald-600 mt-1">{scheduleHealthSummary.totalAssigned}</p>
                   </div>
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                     <span className="text-[11px] font-bold text-slate-400 uppercase">Shift Coverage</span>
-                    <p className="text-xl font-black text-emerald-600 mt-1">{scheduleHealthSummary.coveragePercent}%</p>
+                    <p className="text-xl font-black text-indigo-600 mt-1">{scheduleHealthSummary.coveragePercent}%</p>
                   </div>
                 </div>
 
@@ -801,7 +907,9 @@ export default function App() {
                   <div className="space-y-4">
                     {filteredShifts.map(shift => {
                       const assignedCount = shift.assignedWorkerIds?.length || 0;
-                      const isFullyStaffed = assignedCount >= shift.requiredCount;
+                      const requiredCount = shift.requiredCount || 1;
+                      const targetCount = shift.idealCount || requiredCount;
+                      const isFullyStaffed = assignedCount >= requiredCount;
 
                       return (
                         <div key={shift.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
@@ -821,7 +929,7 @@ export default function App() {
                               <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                                 isFullyStaffed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                               }`}>
-                                {assignedCount} / {shift.requiredCount} Filled
+                                {assignedCount} / {requiredCount} Required (Target: {targetCount})
                               </span>
                               <button
                                 onClick={() => {
@@ -850,7 +958,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* ASSIGN WORKERS LIST */}
+                          {/* ASSIGN WORKERS LIST WITH PREFERRED BADGES */}
                           <div>
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
                               Assign Staff Members
@@ -880,11 +988,17 @@ export default function App() {
                                       </div>
 
                                       <div className="flex items-center space-x-1.5">
+                                        {workerPref === 'preferred' && (
+                                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded" title="Preferred Shift">
+                                            <Star className="w-2.5 h-2.5 fill-current" />
+                                            <span>Pref</span>
+                                          </span>
+                                        )}
                                         {workerPref === 'available' && (
-                                          <span className="w-2 h-2 rounded-full bg-emerald-500" title="Prefers Available"></span>
+                                          <span className="w-2 h-2 rounded-full bg-emerald-500" title="Available"></span>
                                         )}
                                         {workerPref === 'unavailable' && (
-                                          <span className="w-2 h-2 rounded-full bg-rose-500" title="Prefers Unavailable"></span>
+                                          <span className="w-2 h-2 rounded-full bg-rose-500" title="Unavailable"></span>
                                         )}
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
                                           isAssigned ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
@@ -911,7 +1025,7 @@ export default function App() {
 
       {/* STAFF MANAGEMENT MODAL */}
       {showStaffManagementModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
@@ -1034,7 +1148,7 @@ export default function App() {
 
       {/* ADD WORKER MODAL */}
       {showAddWorkerModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">Add New Staff Member</h3>
@@ -1122,9 +1236,9 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD / EDIT SHIFT MODAL */}
+      {/* ADD / EDIT SHIFT MODAL WITH TARGET EMPLOYEES COUNT */}
       {showAddShiftModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">
@@ -1171,16 +1285,29 @@ export default function App() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Required Workers Count</label>
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={newShift.requiredCount}
-                  onChange={(e) => setNewShift({ ...newShift, requiredCount: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Required Count</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={newShift.requiredCount}
+                    onChange={(e) => setNewShift({ ...newShift, requiredCount: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target / Ideal Count</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={newShift.idealCount}
+                    onChange={(e) => setNewShift({ ...newShift, idealCount: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
               </div>
 
               <div className="pt-3 flex justify-end space-x-2">
@@ -1203,28 +1330,28 @@ export default function App() {
         </div>
       )}
 
-      {/* MY SCHEDULE REPORT MODAL */}
+      {/* WORKER SCHEDULE REPORT MODAL WITH PRINT OPTION */}
       {showMyScheduleModal && currentWorker && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-white">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 print:shadow-none print:border-none print:max-w-none print:w-full">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Personal Shift Schedule</h3>
-                <p className="text-xs text-slate-500">Assigned shifts for {currentWorker.name}</p>
+                <h3 className="text-lg font-bold text-slate-900">Personal Shift Schedule Report</h3>
+                <p className="text-xs text-slate-500">Assigned shifts for <strong>{currentWorker.name}</strong> ({currentWorker.role})</p>
               </div>
-              <button onClick={() => setShowMyScheduleModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowMyScheduleModal(false)} className="text-slate-400 hover:text-slate-600 print:hidden">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 max-h-80 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto print:max-h-none print:overflow-visible">
               {shifts.filter(s => s.assignedWorkerIds?.includes(currentWorker.id)).length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">You are not currently assigned to any scheduled shifts.</p>
               ) : (
                 shifts
                   .filter(s => s.assignedWorkerIds?.includes(currentWorker.id))
                   .map(s => (
-                    <div key={s.id} className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
+                    <div key={s.id} className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
                       <div>
                         <span className="text-[11px] font-bold text-indigo-700">{s.date}</span>
                         <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
@@ -1238,7 +1365,15 @@ export default function App() {
               )}
             </div>
 
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex justify-between items-center print:hidden border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handlePrintSchedule}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center space-x-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Schedule</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setShowMyScheduleModal(false)}
