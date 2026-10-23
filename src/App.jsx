@@ -64,7 +64,6 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
-
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'shift-manager-app';
 
@@ -522,7 +521,6 @@ export default function App() {
       {/* MAIN CONTAINER */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
 
-        {}
         {activeTab === 'worker' && (
           <div className="space-y-6">
             
@@ -659,7 +657,6 @@ export default function App() {
                   </div>
                 )}
 
-                {}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-bold text-slate-800 flex items-center space-x-2">
@@ -819,7 +816,6 @@ export default function App() {
           </div>
         )}
 
-        {}
         {activeTab === 'manager' && (
           <div className="space-y-6">
 
@@ -1009,7 +1005,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
@@ -1157,7 +1152,6 @@ export default function App() {
           </div>
         )}
 
-        {}
         {showStaffManagementModal && (
           <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
