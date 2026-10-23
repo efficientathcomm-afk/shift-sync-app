@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { 
   Users, 
   Calendar, 
@@ -22,10 +22,13 @@ import {
   UserCheck,
   Building,
   RefreshCw,
-  LogOut
+  LogOut,
+  Edit3,
+  Archive,
+  Check
 } from 'lucide-react';
 
-// Firebase Configuration - Placeholder / Fallback mock safety
+// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDummyKeyForShiftSyncDemoApp",
   authDomain: "shiftsync-app.firebaseapp.com",
@@ -97,6 +100,37 @@ export default function App() {
 
   const [editingShift, setEditingShift] = useState(null);
 
+  // Load / sync collections with Firestore or state fallbacks
+  useEffect(() => {
+    const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
+    const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
+    const availCol = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities');
+
+    const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(w => !w._deleted);
+      if (data.length > 0) setWorkers(data);
+    }, () => {});
+
+    const unsubShifts = onSnapshot(shiftsCol, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(s => !s._deleted);
+      if (data.length > 0) setShifts(data);
+    }, () => {});
+
+    const unsubAvail = onSnapshot(availCol, (snapshot) => {
+      const availObj = {};
+      snapshot.docs.forEach(doc => {
+        availObj[doc.id] = doc.data();
+      });
+      if (Object.keys(availObj).length > 0) setAvailabilities(availObj);
+    }, () => {});
+
+    return () => {
+      unsubWorkers();
+      unsubShifts();
+      unsubAvail();
+    };
+  }, []);
+
   const currentWorker = useMemo(() => {
     return workers.find(w => w.id === selectedWorkerId) || null;
   }, [workers, selectedWorkerId]);
@@ -160,9 +194,7 @@ export default function App() {
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
       await setDoc(workerRef, createdWorker);
-    } catch (err) {
-      console.log('Saved to state (Firestore offline/mock mode)');
-    }
+    } catch (err) {}
   };
 
   const handleDeleteWorker = async (workerId) => {
@@ -181,9 +213,7 @@ export default function App() {
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
       await setDoc(workerRef, { _deleted: true });
-    } catch (err) {
-      console.log('Worker deleted from state');
-    }
+    } catch (err) {}
   };
 
   const handleUpdateWorkerPin = async (workerId, newPin) => {
@@ -197,20 +227,31 @@ export default function App() {
     } catch (err) {}
   };
 
-  const handleAvailabilityToggle = (shiftId, status) => {
+  const handleAvailabilityToggle = async (shiftId, status) => {
     if (!currentWorker) return;
+
+    const updatedUserMap = {
+      ...(availabilities[currentWorker.id] || {}),
+      [shiftId]: status
+    };
+
     setAvailabilities(prev => ({
       ...prev,
-      [currentWorker.id]: {
-        ...(prev[currentWorker.id] || {}),
-        [shiftId]: status
-      }
+      [currentWorker.id]: updatedUserMap
     }));
+
+    setSubmissionSuccess(true);
+    setTimeout(() => setSubmissionSuccess(false), 3000);
+
+    try {
+      const availRef = doc(db, 'artifacts', appId, 'public', 'data', 'availabilities', currentWorker.id);
+      await setDoc(availRef, updatedUserMap, { merge: true });
+    } catch (err) {}
   };
 
-  const handleCreateShift = (e) => {
+  const handleCreateShift = async (e) => {
     e.preventDefault();
-    const newId = 's_' + Date.now();
+    const newId = editingShift ? editingShift.id : 's_' + Date.now();
     const createdShift = {
       id: newId,
       date: newShift.date,
@@ -218,10 +259,16 @@ export default function App() {
       location: newShift.location,
       requiredCount: parseInt(newShift.requiredCount, 10) || 1,
       idealCount: parseInt(newShift.idealCount, 10) || 2,
-      assignedWorkerIds: []
+      assignedWorkerIds: editingShift ? editingShift.assignedWorkerIds : []
     };
 
-    setShifts(prev => [...prev, createdShift]);
+    if (editingShift) {
+      setShifts(prev => prev.map(s => s.id === newId ? createdShift : s));
+      setEditingShift(null);
+    } else {
+      setShifts(prev => [...prev, createdShift]);
+    }
+
     setShowAddShiftModal(false);
     setNewShift({
       date: SAMPLE_DATES[0],
@@ -230,29 +277,59 @@ export default function App() {
       requiredCount: 2,
       idealCount: 3
     });
+
+    try {
+      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
+      await setDoc(shiftRef, createdShift);
+    } catch (err) {}
   };
 
-  const handleAssignWorkerToShift = (shiftId, workerId) => {
+  const handleAssignWorkerToShift = async (shiftId, workerId) => {
+    let updatedShift;
     setShifts(prev => prev.map(s => {
       if (s.id === shiftId) {
         const alreadyAssigned = s.assignedWorkerIds?.includes(workerId);
         const updated = alreadyAssigned
           ? s.assignedWorkerIds.filter(id => id !== workerId)
           : [...(s.assignedWorkerIds || []), workerId];
-        return { ...s, assignedWorkerIds: updated };
+        updatedShift = { ...s, assignedWorkerIds: updated };
+        return updatedShift;
       }
       return s;
     }));
+
+    if (updatedShift) {
+      try {
+        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
+        await setDoc(shiftRef, updatedShift, { merge: true });
+      } catch (err) {}
+    }
   };
 
-  const handleDeleteShift = (shiftId) => {
+  const handleDeleteShift = async (shiftId) => {
     setShifts(prev => prev.filter(s => s.id !== shiftId));
+    try {
+      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
+      await setDoc(shiftRef, { _deleted: true });
+    } catch (err) {}
   };
 
-  const handleResetDemoData = () => {
-    setWorkers([]);
-    setShifts([]);
-    setAvailabilities({});
+  const handleSeedDemoData = () => {
+    const defaultWorkers = [
+      { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234' },
+      { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345' },
+      { id: 'w_3', name: 'Sam Taylor', role: 'Barista', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456' }
+    ];
+
+    const defaultShifts = [
+      { id: 's_1', date: SAMPLE_DATES[0], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Downtown Hub', requiredCount: 2, idealCount: 3, assignedWorkerIds: ['w_1'] },
+      { id: 's_2', date: SAMPLE_DATES[0], timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', location: 'Downtown Hub', requiredCount: 2, idealCount: 2, assignedWorkerIds: [] },
+      { id: 's_3', date: SAMPLE_DATES[1], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Uptown Express', requiredCount: 1, idealCount: 2, assignedWorkerIds: ['w_2'] }
+    ];
+
+    setWorkers(defaultWorkers);
+    setShifts(defaultShifts);
+    setSelectedWorkerId(defaultWorkers[0].id);
   };
 
   // Filter workers based on search modal input
@@ -268,9 +345,13 @@ export default function App() {
 
   // Filter shifts based on date selection filter
   const filteredShifts = useMemo(() => {
-    if (selectedDateFilter === 'ALL') return shifts;
-    return shifts.filter(s => s.date === selectedDateFilter);
-  }, [shifts, selectedDateFilter]);
+    let list = shifts;
+    if (!showArchivedShifts) {
+      list = list.filter(s => s.date >= SAMPLE_DATES[0]);
+    }
+    if (selectedDateFilter === 'ALL') return list;
+    return list.filter(s => s.date === selectedDateFilter);
+  }, [shifts, selectedDateFilter, showArchivedShifts]);
 
   // Manager schedule metrics
   const scheduleHealthSummary = useMemo(() => {
@@ -333,6 +414,14 @@ export default function App() {
         </div>
       </header>
 
+      {/* SUBMISSION NOTIFICATION BANNER */}
+      {submissionSuccess && (
+        <div className="bg-emerald-600 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center space-x-2 animate-fade-in">
+          <Check className="w-4 h-4" />
+          <span>Availability saved successfully! Your preferences have been registered.</span>
+        </div>
+      )}
+
       {/* MAIN CONTAINER */}
       <main className="max-w-6xl mx-auto px-4 pt-6">
 
@@ -379,13 +468,47 @@ export default function App() {
               </div>
             </div>
 
+            {/* DATE FILTER PILLS */}
+            <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+              <button
+                onClick={() => setSelectedDateFilter('ALL')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                  selectedDateFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                All Upcoming Shifts
+              </button>
+              {SAMPLE_DATES.map((date, idx) => (
+                <button
+                  key={date}
+                  onClick={() => setSelectedDateFilter(date)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                    selectedDateFilter === date
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  {idx === 0 ? 'Today' : date}
+                </button>
+              ))}
+            </div>
+
             {!currentWorker ? (
-              <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
+              <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-4">
                 <Users className="w-10 h-10 mx-auto text-slate-300" />
                 <h3 className="text-base font-bold text-slate-700">No Workers Available</h3>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Switch to the Manager Dashboard to add team members to the staff roster and set up shifts.
+                  Switch to the Manager Dashboard to add team members, or click below to populate mock staff & shifts.
                 </p>
+                <button
+                  onClick={handleSeedDemoData}
+                  className="bg-indigo-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow inline-flex items-center space-x-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Load Sample Staff & Shifts</span>
+                </button>
               </div>
             ) : !isWorkerAuthenticated ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm max-w-md mx-auto text-center space-y-4">
@@ -439,15 +562,15 @@ export default function App() {
                   </button>
                 </div>
 
-                {shifts.length === 0 ? (
+                {filteredShifts.length === 0 ? (
                   <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-slate-500">
                     <Calendar className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="text-sm font-bold text-slate-700">No active shifts scheduled</p>
-                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts posted by the manager.</p>
+                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts matching the selected date filter.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {shifts.map(shift => {
+                    {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
                       const isAssigned = shift.assignedWorkerIds?.includes(currentWorker.id);
 
@@ -533,7 +656,15 @@ export default function App() {
               </div>
 
               {isManagerAuthenticated && (
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleSeedDemoData}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2.5 rounded-xl transition flex items-center space-x-1"
+                    title="Populate test shifts and workers"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Seed Sample Data</span>
+                  </button>
                   <button
                     onClick={() => setShowStaffManagementModal(true)}
                     className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-1.5"
@@ -542,7 +673,17 @@ export default function App() {
                     <span>Manage Staff ({workers.length})</span>
                   </button>
                   <button
-                    onClick={() => setShowAddShiftModal(true)}
+                    onClick={() => {
+                      setEditingShift(null);
+                      setNewShift({
+                        date: SAMPLE_DATES[0],
+                        timeSlot: 'Morning (08:00 AM - 04:00 PM)',
+                        location: 'Main Branch',
+                        requiredCount: 2,
+                        idealCount: 3
+                      });
+                      setShowAddShiftModal(true);
+                    }}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-1.5"
                   >
                     <Plus className="w-4 h-4" />
@@ -610,13 +751,50 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* DATE FILTER & ARCHIVE TOGGLE BAR */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200">
+                  <div className="flex items-center space-x-2 overflow-x-auto w-full sm:w-auto scrollbar-none">
+                    <button
+                      onClick={() => setSelectedDateFilter('ALL')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                        selectedDateFilter === 'ALL'
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      All Dates
+                    </button>
+                    {SAMPLE_DATES.map((date) => (
+                      <button
+                        key={date}
+                        onClick={() => setSelectedDateFilter(date)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                          selectedDateFilter === date
+                            ? 'bg-indigo-600 text-white shadow'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {date}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setShowArchivedShifts(!showArchivedShifts)}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center space-x-1 px-2 py-1"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>{showArchivedShifts ? 'Hide Archived Shifts' : 'Show All Shifts'}</span>
+                  </button>
+                </div>
+
                 {/* SHIFTS LIST FOR MANAGERS */}
                 {filteredShifts.length === 0 ? (
                   <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
                     <Calendar className="w-10 h-10 mx-auto text-slate-300" />
                     <h3 className="text-base font-bold text-slate-700">No shifts scheduled</h3>
                     <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                      Click "Add New Shift" above to create shift slots and assign team members.
+                      Click "Add New Shift" or "Seed Sample Data" to configure shifts for team assignments.
                     </p>
                   </div>
                 ) : (
@@ -645,6 +823,23 @@ export default function App() {
                               }`}>
                                 {assignedCount} / {shift.requiredCount} Filled
                               </span>
+                              <button
+                                onClick={() => {
+                                  setEditingShift(shift);
+                                  setNewShift({
+                                    date: shift.date,
+                                    timeSlot: shift.timeSlot,
+                                    location: shift.location,
+                                    requiredCount: shift.requiredCount,
+                                    idealCount: shift.idealCount || shift.requiredCount
+                                  });
+                                  setShowAddShiftModal(true);
+                                }}
+                                className="text-slate-400 hover:text-indigo-600 p-1 transition"
+                                title="Edit Shift"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => handleDeleteShift(shift.id)}
                                 className="text-slate-400 hover:text-rose-600 p-1 transition"
@@ -927,12 +1122,14 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD SHIFT MODAL */}
+      {/* ADD / EDIT SHIFT MODAL */}
       {showAddShiftModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Create Shift Slot</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                {editingShift ? 'Edit Shift Slot' : 'Create Shift Slot'}
+              </h3>
               <button onClick={() => setShowAddShiftModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
@@ -998,7 +1195,7 @@ export default function App() {
                   type="submit"
                   className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700"
                 >
-                  Create Shift
+                  {editingShift ? 'Save Changes' : 'Create Shift'}
                 </button>
               </div>
             </form>
