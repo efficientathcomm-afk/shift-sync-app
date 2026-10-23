@@ -1,57 +1,38 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
-  getAuth, 
-  signInAnonymously 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  onSnapshot, 
-  setDoc, 
-  updateDoc 
-} from 'firebase/firestore';
-import { 
-  User, 
-  Shield, 
-  CheckCircle2, 
-  XCircle, 
-  Star, 
+  Users, 
   Calendar, 
   Clock, 
-  MapPin, 
-  Users, 
+  CheckCircle, 
+  XCircle, 
+  AlertCircle, 
+  Lock, 
+  Eye, 
+  EyeOff, 
   Plus, 
   Search, 
-  Printer, 
-  RefreshCw, 
-  Check, 
-  AlertCircle,
-  Briefcase,
+  FileText, 
+  X, 
+  ShieldCheck, 
+  BarChart3, 
   ChevronRight,
-  Sparkles,
-  Info,
-  Lock,
-  Unlock,
-  FileText,
-  Archive,
-  X,
-  Key,
-  Edit3,
-  Eye,
-  EyeOff
+  UserCheck,
+  Building,
+  RefreshCw,
+  LogOut
 } from 'lucide-react';
 
-// Exact Firebase project configuration
+// Firebase Configuration - Placeholder / Fallback mock safety
 const firebaseConfig = {
-  apiKey: "AIzaSyAvu_cavWQANh99-YdkE5jpFtGa3oD3qTw",
-  authDomain: "shift-availability-8ba6e.firebaseapp.com",
-  projectId: "shift-availability-8ba6e",
-  storageBucket: "shift-availability-8ba6e.firebasestorage.app",
-  messagingSenderId: "720024147410",
-  appId: "1:720024147410:web:e2f936047da511e77f240b",
-  measurementId: "G-6TN9QYYN83"
+  apiKey: "AIzaSyDummyKeyForShiftSyncDemoApp",
+  authDomain: "shiftsync-app.firebaseapp.com",
+  projectId: "shiftsync-app",
+  storageBucket: "shiftsync-app.appspot.com",
+  messagingSenderId: "1234567890",
+  appId: "1:1234567890:web:abcdef123456"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -59,15 +40,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'shift-manager-app';
 
-const DEFAULT_WORKERS = [
-  { id: 'w1', name: 'Alex Rivera', role: 'Full-Time Barista', phone: '(555) 019-2831', pin: '1234' },
-  { id: 'w2', name: 'Sarah Chen', role: 'Shift Lead', phone: '(555) 014-4920', pin: '2345' },
-  { id: 'w3', name: 'Marcus Johnson', role: 'Part-Time Associate', phone: '(555) 017-8833', pin: '3456' },
-  { id: 'w4', name: 'Emily Taylor', role: 'Barista', phone: '(555) 012-3901', pin: '4567' },
-  { id: 'w5', name: 'David Kim', role: 'Kitchen Support', phone: '(555) 018-7711', pin: '5678' },
-  { id: 'w6', name: 'Jessica Gomez', role: 'Shift Lead', phone: '(555) 015-6622', pin: '6789' }
-];
-
+// Helper function to generate upcoming dates (next 7 days starting today)
 const getUpcomingDates = () => {
   const dates = [];
   const today = new Date();
@@ -81,24 +54,14 @@ const getUpcomingDates = () => {
 
 const SAMPLE_DATES = getUpcomingDates();
 
-const DEFAULT_SHIFTS = [
-  { id: 's1', date: SAMPLE_DATES[0], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Main Branch - Front Desk', requiredCount: 2, idealCount: 3, assignedWorkerIds: ['w2'] },
-  { id: 's2', date: SAMPLE_DATES[0], timeSlot: 'Evening (03:00 PM - 11:00 PM)', location: 'Main Branch - Counter', requiredCount: 2, idealCount: 3, assignedWorkerIds: [] },
-  { id: 's3', date: SAMPLE_DATES[1], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Main Branch - Front Desk', requiredCount: 3, idealCount: 4, assignedWorkerIds: ['w1'] },
-  { id: 's4', date: SAMPLE_DATES[1], timeSlot: 'Evening (03:00 PM - 11:00 PM)', location: 'Downtown Express - Bar', requiredCount: 2, idealCount: 2, assignedWorkerIds: [] },
-  { id: 's5', date: SAMPLE_DATES[2], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Downtown Express - Bar', requiredCount: 2, idealCount: 3, assignedWorkerIds: [] },
-  { id: 's6', date: SAMPLE_DATES[2], timeSlot: 'Weekend Mid-Day (10:00 AM - 06:00 PM)', location: 'Main Branch - Event Lounge', requiredCount: 3, idealCount: 5, assignedWorkerIds: [] },
-  { id: 's7', date: SAMPLE_DATES[3], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Main Branch - Front Desk', requiredCount: 2, idealCount: 3, assignedWorkerIds: [] },
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('worker');
-  const [workers, setWorkers] = useState(DEFAULT_WORKERS);
-  const [shifts, setShifts] = useState(DEFAULT_SHIFTS);
+  const [workers, setWorkers] = useState([]);
+  const [shifts, setShifts] = useState([]);
   const [availabilities, setAvailabilities] = useState({});
 
   // Worker authentication state
-  const [selectedWorkerId, setSelectedWorkerId] = useState('w1');
+  const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [enteredWorkerPin, setEnteredWorkerPin] = useState('');
   const [isWorkerAuthenticated, setIsWorkerAuthenticated] = useState(false);
   const [workerPinError, setWorkerPinError] = useState(false);
@@ -123,7 +86,7 @@ export default function App() {
   const [showAddShiftModal, setShowAddShiftModal] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
 
-  const [newWorker, setNewWorker] = useState({ name: '', role: 'Barista', phone: '', pin: '' });
+  const [newWorker, setNewWorker] = useState({ name: '', role: 'Barista', email: '', phone: '', pin: '' });
   const [newShift, setNewShift] = useState({
     date: SAMPLE_DATES[0],
     timeSlot: 'Morning (08:00 AM - 04:00 PM)',
@@ -135,7 +98,14 @@ export default function App() {
   const [editingShift, setEditingShift] = useState(null);
 
   const currentWorker = useMemo(() => {
-    return workers.find(w => w.id === selectedWorkerId) || workers[0];
+    return workers.find(w => w.id === selectedWorkerId) || null;
+  }, [workers, selectedWorkerId]);
+
+  // Keep selected worker ID updated if workers list changes
+  useEffect(() => {
+    if (workers.length > 0 && (!selectedWorkerId || !workers.some(w => w.id === selectedWorkerId))) {
+      setSelectedWorkerId(workers[0].id);
+    }
   }, [workers, selectedWorkerId]);
 
   const handleWorkerChange = (newWorkerId) => {
@@ -147,7 +117,8 @@ export default function App() {
 
   const handleVerifyWorkerPin = (e) => {
     e.preventDefault();
-    if (enteredWorkerPin === currentWorker?.pin || enteredWorkerPin === managerPin) {
+    if (!currentWorker) return;
+    if (enteredWorkerPin.trim() === currentWorker.pin) {
       setIsWorkerAuthenticated(true);
       setWorkerPinError(false);
     } else {
@@ -157,208 +128,12 @@ export default function App() {
 
   const handleVerifyManagerPin = (e) => {
     e.preventDefault();
-    if (enteredManagerPin === managerPin) {
+    if (enteredManagerPin.trim() === managerPin) {
       setIsManagerAuthenticated(true);
       setManagerPinError(false);
-      setEnteredManagerPin('');
     } else {
       setManagerPinError(true);
     }
-  };
-
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  const activeShifts = useMemo(() => {
-    return shifts.filter(s => s.date >= todayStr);
-  }, [shifts, todayStr]);
-
-  const displayedShifts = useMemo(() => {
-    const list = showArchivedShifts ? shifts : activeShifts;
-    return list.filter(s => {
-      if (selectedDateFilter !== 'ALL' && s.date !== selectedDateFilter) return false;
-      return true;
-    }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [shifts, activeShifts, showArchivedShifts, selectedDateFilter]);
-
-  const myAssignedShifts = useMemo(() => {
-    return shifts.filter(s => s.assignedWorkerIds?.includes(selectedWorkerId))
-                 .sort((a, b) => a.date.localeCompare(b.date));
-  }, [shifts, selectedWorkerId]);
-
-  useEffect(() => {
-    signInAnonymously(auth).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
-    const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
-      if (!snapshot.empty) {
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setWorkers(docs);
-      }
-    }, () => {});
-
-    const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
-    const unsubShifts = onSnapshot(shiftsCol, (snapshot) => {
-      if (!snapshot.empty) {
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setShifts(docs);
-      }
-    }, () => {});
-
-    const unsubAvail = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'availabilities'), (snapshot) => {
-      const map = {};
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        map[`${data.workerId}_${data.shiftId}`] = data.status;
-      });
-      setAvailabilities(map);
-    }, () => {});
-
-    return () => {
-      unsubWorkers();
-      unsubShifts();
-      unsubAvail();
-    };
-  }, []);
-
-  const getShiftCoverageStatus = (shift) => {
-    const assigned = shift.assignedWorkerIds?.length || 0;
-    const minReq = shift.requiredCount || 1;
-    const ideal = shift.idealCount || minReq;
-
-    if (assigned < minReq) {
-      const needed = minReq - assigned;
-      return {
-        type: 'understaffed',
-        label: `Needs ${needed} More ${needed === 1 ? 'Worker' : 'Workers'}!`,
-        subtext: `${assigned} / ${minReq} Min (${ideal} Target)`,
-        badgeBg: 'bg-rose-100 text-rose-800 border-rose-300',
-        cardBorder: 'border-rose-200 bg-gradient-to-b from-rose-50/30 to-white',
-        urgent: true
-      };
-    } else if (assigned < ideal) {
-      const openIdeal = ideal - assigned;
-      return {
-        type: 'adequate',
-        label: `Covered (${openIdeal} ${openIdeal === 1 ? 'slot' : 'slots'} open)`,
-        subtext: `${assigned} / ${minReq} Min (${ideal} Target)`,
-        badgeBg: 'bg-amber-100 text-amber-800 border-amber-300',
-        cardBorder: 'border-amber-200',
-        urgent: false
-      };
-    } else {
-      return {
-        type: 'fully_staffed',
-        label: 'Fully Staffed',
-        subtext: `${assigned} / ${ideal} Staffed`,
-        badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-        cardBorder: 'border-slate-200',
-        urgent: false
-      };
-    }
-  };
-
-  const handleUpdateWorkerPin = async (workerId, newPin) => {
-    const cleanPin = newPin.trim();
-    if (!cleanPin || cleanPin.length < 4) return;
-
-    setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, pin: cleanPin } : w));
-    setEditingWorkerPinId(null);
-    setTempWorkerPin('');
-
-    try {
-      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
-      await updateDoc(workerRef, { pin: cleanPin });
-    } catch (err) {}
-  };
-
-  const handleCreateShift = async (e) => {
-    e.preventDefault();
-    const newId = 's_' + Date.now();
-    const req = parseInt(newShift.requiredCount, 10) || 1;
-    const ideal = Math.max(req, parseInt(newShift.idealCount, 10) || req);
-
-    const createdShift = {
-      id: newId,
-      ...newShift,
-      requiredCount: req,
-      idealCount: ideal,
-      assignedWorkerIds: []
-    };
-
-    setShifts(prev => [...prev, createdShift]);
-
-    try {
-      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
-      await setDoc(shiftRef, createdShift);
-    } catch (err) {}
-
-    setShowAddShiftModal(false);
-    setNewShift({
-      date: SAMPLE_DATES[0],
-      timeSlot: 'Morning (08:00 AM - 04:00 PM)',
-      location: 'Main Branch',
-      requiredCount: 2,
-      idealCount: 3
-    });
-  };
-
-  const handleUpdateShiftParams = async (e) => {
-    e.preventDefault();
-    if (!editingShift) return;
-    const req = parseInt(editingShift.requiredCount, 10) || 1;
-    const ideal = Math.max(req, parseInt(editingShift.idealCount, 10) || req);
-
-    setShifts(prev => prev.map(s => s.id === editingShift.id ? { ...s, ...editingShift, requiredCount: req, idealCount: ideal } : s));
-
-    try {
-      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', editingShift.id);
-      await updateDoc(shiftRef, {
-        requiredCount: req,
-        idealCount: ideal,
-        timeSlot: editingShift.timeSlot,
-        location: editingShift.location
-      });
-    } catch (err) {}
-
-    setEditingShift(null);
-  };
-
-  const handleSetAvailability = async (shiftId, status) => {
-    if (!selectedWorkerId) return;
-    const key = `${selectedWorkerId}_${shiftId}`;
-    
-    setAvailabilities(prev => ({ ...prev, [key]: status }));
-    setSubmissionSuccess(true);
-    setTimeout(() => setSubmissionSuccess(false), 2500);
-
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'availabilities', key);
-      await setDoc(docRef, {
-        workerId: selectedWorkerId,
-        shiftId,
-        status,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {}
-  };
-
-  const handleToggleWorkerAssignment = async (shiftId, workerId) => {
-    const targetShift = shifts.find(s => s.id === shiftId);
-    if (!targetShift) return;
-
-    const currentAssigned = targetShift.assignedWorkerIds || [];
-    const updatedList = currentAssigned.includes(workerId)
-      ? currentAssigned.filter(id => id !== workerId)
-      : [...currentAssigned, workerId];
-
-    setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, assignedWorkerIds: updatedList } : s));
-
-    try {
-      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
-      await updateDoc(shiftRef, { assignedWorkerIds: updatedList });
-    } catch (err) {}
   };
 
   const handleCreateWorker = async (e) => {
@@ -371,6 +146,7 @@ export default function App() {
       id: newId,
       name: newWorker.name.trim(),
       role: newWorker.role.trim() || 'Team Member',
+      email: newWorker.email.trim() || 'N/A',
       phone: newWorker.phone.trim() || 'N/A',
       pin: assignedPin
     };
@@ -379,177 +155,245 @@ export default function App() {
     setSelectedWorkerId(newId);
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
-    setNewWorker({ name: '', role: 'Barista', phone: '', pin: '' });
+    setNewWorker({ name: '', role: 'Barista', email: '', phone: '', pin: '' });
 
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
       await setDoc(workerRef, createdWorker);
-    } catch (err) {}
+    } catch (err) {
+      console.log('Saved to state (Firestore offline/mock mode)');
+    }
   };
 
-  const handleResetDemoData = async () => {
-    setWorkers(DEFAULT_WORKERS);
-    setShifts(DEFAULT_SHIFTS);
-    setAvailabilities({});
+  const handleDeleteWorker = async (workerId) => {
+    setWorkers(prev => prev.filter(w => w.id !== workerId));
+
+    setShifts(prev => prev.map(s => ({
+      ...s,
+      assignedWorkerIds: s.assignedWorkerIds?.filter(id => id !== workerId) || []
+    })));
+
+    if (selectedWorkerId === workerId) {
+      setIsWorkerAuthenticated(false);
+      setEnteredWorkerPin('');
+    }
 
     try {
-      for (const w of DEFAULT_WORKERS) {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'workers', w.id), w);
-      }
-      for (const s of DEFAULT_SHIFTS) {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', s.id), s);
-      }
+      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
+      await setDoc(workerRef, { _deleted: true });
+    } catch (err) {
+      console.log('Worker deleted from state');
+    }
+  };
+
+  const handleUpdateWorkerPin = async (workerId, newPin) => {
+    if (!newPin.trim()) return;
+    setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, pin: newPin.trim() } : w));
+    setEditingWorkerPinId(null);
+
+    try {
+      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
+      await setDoc(workerRef, { pin: newPin.trim() }, { merge: true });
     } catch (err) {}
   };
 
-  const scheduleHealthSummary = useMemo(() => {
-    let understaffed = 0;
-    let adequate = 0;
-    let fullyStaffed = 0;
+  const handleAvailabilityToggle = (shiftId, status) => {
+    if (!currentWorker) return;
+    setAvailabilities(prev => ({
+      ...prev,
+      [currentWorker.id]: {
+        ...(prev[currentWorker.id] || {}),
+        [shiftId]: status
+      }
+    }));
+  };
 
-    shifts.forEach(s => {
-      const status = getShiftCoverageStatus(s);
-      if (status.type === 'understaffed') understaffed++;
-      else if (status.type === 'adequate') adequate++;
-      else fullyStaffed++;
+  const handleCreateShift = (e) => {
+    e.preventDefault();
+    const newId = 's_' + Date.now();
+    const createdShift = {
+      id: newId,
+      date: newShift.date,
+      timeSlot: newShift.timeSlot,
+      location: newShift.location,
+      requiredCount: parseInt(newShift.requiredCount, 10) || 1,
+      idealCount: parseInt(newShift.idealCount, 10) || 2,
+      assignedWorkerIds: []
+    };
+
+    setShifts(prev => [...prev, createdShift]);
+    setShowAddShiftModal(false);
+    setNewShift({
+      date: SAMPLE_DATES[0],
+      timeSlot: 'Morning (08:00 AM - 04:00 PM)',
+      location: 'Main Branch',
+      requiredCount: 2,
+      idealCount: 3
     });
+  };
 
-    return { total: shifts.length, understaffed, adequate, fullyStaffed };
-  }, [shifts]);
+  const handleAssignWorkerToShift = (shiftId, workerId) => {
+    setShifts(prev => prev.map(s => {
+      if (s.id === shiftId) {
+        const alreadyAssigned = s.assignedWorkerIds?.includes(workerId);
+        const updated = alreadyAssigned
+          ? s.assignedWorkerIds.filter(id => id !== workerId)
+          : [...(s.assignedWorkerIds || []), workerId];
+        return { ...s, assignedWorkerIds: updated };
+      }
+      return s;
+    }));
+  };
 
-  const uniqueDates = useMemo(() => {
-    return Array.from(new Set(shifts.map(s => s.date))).sort();
-  }, [shifts]);
+  const handleDeleteShift = (shiftId) => {
+    setShifts(prev => prev.filter(s => s.id !== shiftId));
+  };
 
-  const totalSlotsNeeded = shifts.reduce((acc, s) => acc + (s.requiredCount || 1), 0);
-  const totalAssignedSlots = shifts.reduce((acc, s) => acc + (s.assignedWorkerIds?.length || 0), 0);
-  const totalCoveragePct = totalSlotsNeeded > 0 ? Math.round((totalAssignedSlots / totalSlotsNeeded) * 100) : 0;
+  const handleResetDemoData = () => {
+    setWorkers([]);
+    setShifts([]);
+    setAvailabilities({});
+  };
 
+  // Filter workers based on search modal input
   const searchedWorkers = useMemo(() => {
     if (!searchQuery.trim()) return workers;
     const q = searchQuery.toLowerCase();
-    return workers.filter(w => w.name.toLowerCase().includes(q) || w.role.toLowerCase().includes(q));
+    return workers.filter(w => 
+      w.name.toLowerCase().includes(q) || 
+      w.role.toLowerCase().includes(q) || 
+      w.email.toLowerCase().includes(q)
+    );
   }, [workers, searchQuery]);
 
+  // Filter shifts based on date selection filter
+  const filteredShifts = useMemo(() => {
+    if (selectedDateFilter === 'ALL') return shifts;
+    return shifts.filter(s => s.date === selectedDateFilter);
+  }, [shifts, selectedDateFilter]);
+
+  // Manager schedule metrics
+  const scheduleHealthSummary = useMemo(() => {
+    let totalNeeded = 0;
+    let totalAssigned = 0;
+    shifts.forEach(s => {
+      totalNeeded += s.requiredCount;
+      totalAssigned += (s.assignedWorkerIds?.length || 0);
+    });
+    return {
+      totalShifts: shifts.length,
+      totalNeeded,
+      totalAssigned,
+      coveragePercent: totalNeeded === 0 ? 100 : Math.round((totalAssigned / totalNeeded) * 100)
+    };
+  }, [shifts]);
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-12 print:bg-white print:pb-0">
-      
+    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased pb-12">
       {/* HEADER NAVBAR */}
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            
-            <div className="flex items-center space-x-3">
-              <div className="bg-indigo-600 text-white p-2 rounded-xl shadow-inner">
-                <Briefcase className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="font-bold text-lg leading-tight">ShiftSync</h1>
-                <p className="text-xs text-slate-400 hidden sm:block">Shift Availability & Manager Dashboard</p>
-              </div>
+      <header className="bg-slate-900 text-white shadow-md sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-indigo-600 rounded-xl shadow-inner">
+              <Calendar className="w-5 h-5 text-white" />
             </div>
-
-            <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
-              <button
-                type="button"
-                onClick={() => setActiveTab('worker')}
-                className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  activeTab === 'worker'
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-              >
-                <User className="w-4 h-4" />
-                <span>Worker Portal</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('manager')}
-                className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                  activeTab === 'manager'
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-              >
-                <Shield className="w-4 h-4" />
-                <span>Manager Dashboard</span>
-                {isManagerAuthenticated && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block ml-1"></span>
-                )}
-              </button>
+            <div>
+              <h1 className="text-lg font-black tracking-tight flex items-center gap-2">
+                ShiftSync <span className="text-[10px] uppercase tracking-wider bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded-full font-bold">Pro</span>
+              </h1>
+              <p className="text-[11px] text-slate-400 font-medium">Smart Staff Scheduling & Availability</p>
             </div>
+          </div>
 
+          {/* TAB SWITCHER BUTTONS */}
+          <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700/60">
             <button
-              type="button"
-              onClick={handleResetDemoData}
-              title="Reset Sample Data"
-              className="text-xs text-slate-400 hover:text-white flex items-center space-x-1 p-2 rounded hover:bg-slate-800 transition"
+              onClick={() => setActiveTab('worker')}
+              className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'worker' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Reset Demo</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>Worker Portal</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('manager')}
+              className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'manager' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Manager Dashboard</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* PRINT HEADER */}
-      <div className="hidden print:block p-6 border-b border-slate-200">
-        <h1 className="text-2xl font-bold text-slate-900">Shift Schedule & Staff Availability Summary Report</h1>
-        <p className="text-sm text-slate-600">Generated on {new Date().toLocaleDateString()}</p>
-      </div>
-
       {/* MAIN CONTAINER */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main className="max-w-6xl mx-auto px-4 pt-6">
 
+        {/* WORKER VIEW TAB */}
         {activeTab === 'worker' && (
           <div className="space-y-6">
-            
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center space-x-2 text-indigo-600 font-semibold text-sm">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Employee Portal</span>
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 mt-1">Submit Shift Availability</h2>
-                <p className="text-sm text-slate-500">
-                  Select your profile and enter your 4-digit PIN code to set availability or view your assigned schedule.
-                </p>
+                <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Worker Portal</span>
+                <h2 className="text-xl font-black text-slate-900 mt-0.5">Submit Availability</h2>
+                <p className="text-xs text-slate-500 mt-1">Select your user profile, enter your PIN, and mark preferences for upcoming open shifts.</p>
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="relative">
-                  <select
-                    value={selectedWorkerId}
-                    onChange={(e) => handleWorkerChange(e.target.value)}
-                    className="w-full sm:w-64 bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block p-3 pr-8 font-medium shadow-sm cursor-pointer"
-                  >
-                    {workers.map(w => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} ({w.role})
-                      </option>
-                    ))}
-                  </select>
+                  {workers.length > 0 ? (
+                    <select
+                      value={selectedWorkerId}
+                      onChange={(e) => handleWorkerChange(e.target.value)}
+                      className="w-full sm:w-64 bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block p-3 pr-8 font-medium shadow-sm cursor-pointer"
+                    >
+                      {workers.map(w => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} ({w.role})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-xs text-slate-400 p-3 bg-slate-100 rounded-xl font-medium">
+                      No staff registered yet
+                    </div>
+                  )}
                 </div>
 
                 <button
                   type="button"
+                  disabled={!currentWorker}
                   onClick={() => setShowMyScheduleModal(true)}
-                  className="inline-flex items-center justify-center space-x-1.5 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-4 py-3 rounded-xl transition border border-indigo-200"
+                  className="inline-flex items-center justify-center space-x-1.5 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-4 py-3 rounded-xl transition border border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>My Schedule Report</span>
+                  <span>My Assigned Shifts</span>
                 </button>
               </div>
             </div>
 
-            {!isWorkerAuthenticated ? (
+            {!currentWorker ? (
+              <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
+                <Users className="w-10 h-10 mx-auto text-slate-300" />
+                <h3 className="text-base font-bold text-slate-700">No Workers Available</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Switch to the Manager Dashboard to add team members to the staff roster and set up shifts.
+                </p>
+              </div>
+            ) : !isWorkerAuthenticated ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm max-w-md mx-auto text-center space-y-4">
                 <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
                   <Lock className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Worker PIN Security Gate</h3>
+                  <h3 className="text-lg font-bold text-slate-900">Worker Security Verification</h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Please enter the 4-digit access PIN for <strong className="text-slate-800">{currentWorker?.name}</strong> to manage availability preferences.
                   </p>
@@ -566,7 +410,7 @@ export default function App() {
                   />
 
                   {workerPinError && (
-                    <p className="text-xs text-rose-600 font-semibold">Incorrect PIN. If forgotten, contact your Manager for a PIN reset.</p>
+                    <p className="text-xs text-rose-600 font-semibold">Incorrect PIN. Contact your Manager if needed.</p>
                   )}
 
                   <div className="pt-2">
@@ -578,216 +422,145 @@ export default function App() {
                     </button>
                   </div>
                 </form>
-
-                <div className="pt-2 border-t border-slate-100">
-                  <p className="text-[11px] text-slate-400">
-                    Demo Hint: Default PIN for {currentWorker?.name} is <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono">{currentWorker?.pin || '1234'}</code>
-                  </p>
-                </div>
               </div>
             ) : (
-              <>
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-2">
-                    <Unlock className="w-4 h-4 text-emerald-600" />
-                    <span>Unlocked for <strong>{currentWorker?.name}</strong></span>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl">
+                  <div className="flex items-center space-x-2 text-xs font-bold">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Unlocked as: <strong>{currentWorker.name}</strong> ({currentWorker.role})</span>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsWorkerAuthenticated(false)}
-                    className="font-semibold text-emerald-700 hover:underline"
+                    className="text-xs font-semibold text-emerald-700 hover:underline flex items-center space-x-1"
                   >
-                    Lock Session
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Lock Profile</span>
                   </button>
                 </div>
 
-                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2.5 bg-indigo-600/30 border border-indigo-400/30 rounded-xl">
-                      <Info className="w-5 h-5 text-indigo-300" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-white">Upcoming Shift Coverage Status</h4>
-                      <p className="text-xs text-slate-300">
-                        {scheduleHealthSummary.total} Upcoming Shifts • Mark preferred or available to help managers fill open slots!
-                      </p>
-                    </div>
+                {shifts.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-slate-500">
+                    <Calendar className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                    <p className="text-sm font-bold text-slate-700">No active shifts scheduled</p>
+                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts posted by the manager.</p>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {shifts.map(shift => {
+                      const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
+                      const isAssigned = shift.assignedWorkerIds?.includes(currentWorker.id);
 
-                  <div className="flex items-center space-x-2 text-xs flex-wrap gap-y-2">
-                    <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-xl font-semibold flex items-center">
-                      <AlertCircle className="w-3.5 h-3.5 mr-1" />
-                      {scheduleHealthSummary.understaffed} Needs Staff
-                    </span>
-                    <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl font-semibold flex items-center">
-                      <Clock className="w-3.5 h-3.5 mr-1" />
-                      {scheduleHealthSummary.adequate} Open Slots
-                    </span>
-                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-semibold flex items-center">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                      {scheduleHealthSummary.fullyStaffed} Fully Staffed
-                    </span>
-                  </div>
-                </div>
-
-                {submissionSuccess && (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl shadow-sm flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                      <span className="text-sm font-medium">Availability preference saved successfully!</span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-slate-800 flex items-center space-x-2">
-                      <Calendar className="w-5 h-5 text-indigo-600" />
-                      <span>Active Shift Slots ({displayedShifts.length})</span>
-                    </h3>
-                  </div>
-
-                  {displayedShifts.length === 0 ? (
-                    <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-slate-500">
-                      No active upcoming shifts available right now.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {displayedShifts.map(shift => {
-                        const statusKey = `${selectedWorkerId}_${shift.id}`;
-                        const currentStatus = availabilities[statusKey] || 'unset';
-                        const isAssigned = shift.assignedWorkerIds?.includes(selectedWorkerId);
-
-                        const coverageStatus = getShiftCoverageStatus(shift);
-                        const assignedWorkerObjects = workers.filter(w => shift.assignedWorkerIds?.includes(w.id));
-
-                        return (
-                          <div 
-                            key={shift.id}
-                            className={`bg-white rounded-2xl p-5 border transition-all shadow-sm flex flex-col justify-between ${coverageStatus.cardBorder} ${
-                              isAssigned 
-                                ? 'ring-2 ring-indigo-500 border-indigo-500' 
-                                : 'hover:border-slate-300'
-                            }`}
-                          >
-                            <div>
-                              <div className="flex items-center justify-between mb-3">
-                                <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-700">
-                                  <Calendar className="w-3.5 h-3.5 mr-1 text-slate-500" />
-                                  {new Date(shift.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                      return (
+                        <div 
+                          key={shift.id} 
+                          className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all ${
+                            isAssigned 
+                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between">
+                              <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
+                                {shift.date}
+                              </span>
+                              {isAssigned && (
+                                <span className="text-[11px] font-extrabold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full flex items-center space-x-1">
+                                  <CheckCircle className="w-3 h-3" />
+                                  <span>You are Assigned!</span>
                                 </span>
+                              )}
+                            </div>
 
-                                {isAssigned && (
-                                  <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-600 text-white shadow-sm">
-                                    <Check className="w-3.5 h-3.5 mr-1" />
-                                    Scheduled
-                                  </span>
-                                )}
-                              </div>
-
-                              <h4 className="font-bold text-slate-900 text-base mb-1 flex items-center">
-                                <Clock className="w-4 h-4 mr-1.5 text-indigo-600 flex-shrink-0" />
+                            <div>
+                              <h4 className="font-bold text-slate-900 text-sm flex items-center space-x-1.5">
+                                <Clock className="w-4 h-4 text-indigo-600" />
                                 <span>{shift.timeSlot}</span>
                               </h4>
-                              <p className="text-xs text-slate-500 flex items-center mb-3">
-                                <MapPin className="w-3.5 h-3.5 mr-1 text-slate-400 flex-shrink-0" />
+                              <p className="text-xs text-slate-500 mt-1 flex items-center space-x-1">
+                                <Building className="w-3.5 h-3.5 text-slate-400" />
                                 <span>{shift.location}</span>
                               </p>
-
-                              <div className="mb-3 pt-2 border-t border-slate-100">
-                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                                  Assigned Staff ({assignedWorkerObjects.length}):
-                                </span>
-                                {assignedWorkerObjects.length === 0 ? (
-                                  <span className="text-xs text-slate-400 italic">None assigned yet</span>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1">
-                                    {assignedWorkerObjects.map(w => (
-                                      <span key={w.id} className="inline-flex items-center text-[11px] bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded-md border border-slate-200">
-                                        <User className="w-3 h-3 mr-1 text-slate-400" />
-                                        {w.name.split(' ')[0]}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 mb-4 space-y-1.5">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className={`font-bold px-2 py-0.5 rounded-md border text-[11px] ${coverageStatus.badgeBg}`}>
-                                    {coverageStatus.label}
-                                  </span>
-                                  <span className="text-[11px] text-slate-500 font-medium">{coverageStatus.subtext}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="pt-3 border-t border-slate-100">
-                              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                                Your Availability:
-                              </span>
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleSetAvailability(shift.id, 'preferred')}
-                                  className={`px-2 py-2 text-xs font-semibold rounded-xl border flex flex-col items-center justify-center transition-all ${
-                                    currentStatus === 'preferred'
-                                      ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'
-                                  }`}
-                                >
-                                  <Star className={`w-3.5 h-3.5 mb-0.5 ${currentStatus === 'preferred' ? 'fill-white' : ''}`} />
-                                  <span>Preferred</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleSetAvailability(shift.id, 'available')}
-                                  className={`px-2 py-2 text-xs font-semibold rounded-xl border flex flex-col items-center justify-center transition-all ${
-                                    currentStatus === 'available'
-                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
-                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'
-                                  }`}
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5 mb-0.5" />
-                                  <span>Available</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleSetAvailability(shift.id, 'unavailable')}
-                                  className={`px-2 py-2 text-xs font-semibold rounded-xl border flex flex-col items-center justify-center transition-all ${
-                                    currentStatus === 'unavailable'
-                                      ? 'bg-rose-600 text-white border-rose-700 shadow-sm'
-                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300'
-                                  }`}
-                                >
-                                  <XCircle className="w-3.5 h-3.5 mb-0.5" />
-                                  <span>Unavailable</span>
-                                </button>
-                              </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </>
+
+                          <div className="pt-4 border-t border-slate-100 mt-4 space-y-2">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => handleAvailabilityToggle(shift.id, 'available')}
+                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1 border transition ${
+                                  workerStatus === 'available'
+                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>Available</span>
+                              </button>
+                              <button
+                                onClick={() => handleAvailabilityToggle(shift.id, 'unavailable')}
+                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1 border transition ${
+                                  workerStatus === 'unavailable'
+                                    ? 'bg-rose-600 text-white border-rose-600'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Unavailable</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
 
+        {/* MANAGER VIEW TAB */}
         {activeTab === 'manager' && (
           <div className="space-y-6">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Manager Control Center</span>
+                <h2 className="text-xl font-black text-slate-900 mt-0.5">Roster & Shift Allocation</h2>
+                <p className="text-xs text-slate-500 mt-1">Manage team members, create shifts, and review availability submissions.</p>
+              </div>
+
+              {isManagerAuthenticated && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowStaffManagementModal(true)}
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-1.5"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Manage Staff ({workers.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddShiftModal(true)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add New Shift</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {!isManagerAuthenticated ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm max-w-md mx-auto text-center space-y-4">
                 <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
-                  <Shield className="w-6 h-6" />
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Manager Access Gate</h3>
+                  <h3 className="text-lg font-bold text-slate-900">Manager Security Gate</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Enter the manager PIN code to manage shift rosters, worker pins, and roster assignments.
+                    Enter Manager Security PIN (Default: <strong className="text-indigo-600 font-mono">9999</strong>) to access shift configuration.
                   </p>
                 </div>
 
@@ -795,14 +568,14 @@ export default function App() {
                   <input
                     type="password"
                     maxLength={4}
-                    placeholder="PIN e.g. 9999"
+                    placeholder="PIN"
                     value={enteredManagerPin}
                     onChange={(e) => setEnteredManagerPin(e.target.value)}
                     className="w-36 text-center text-xl tracking-widest font-bold bg-slate-50 border border-slate-300 rounded-xl py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
 
                   {managerPinError && (
-                    <p className="text-xs text-rose-600 font-semibold">Invalid PIN. Try default demo PIN 9999.</p>
+                    <p className="text-xs text-rose-600 font-semibold">Invalid Manager PIN. Try 9999.</p>
                   )}
 
                   <div className="pt-2">
@@ -814,333 +587,248 @@ export default function App() {
                     </button>
                   </div>
                 </form>
-
-                <div className="pt-2 border-t border-slate-100">
-                  <p className="text-[11px] text-slate-400">
-                    Demo Hint: Manager PIN is <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono">9999</code>
-                  </p>
-                </div>
               </div>
             ) : (
-              <>
-                {/* MANAGER STATS DASHBOARD */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Overall Staffing</span>
-                      <Users className="w-5 h-5 text-indigo-600" />
-                    </div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-2xl font-black text-slate-900">{totalCoveragePct}%</span>
-                      <span className="text-xs text-slate-500">{totalAssignedSlots} / {totalSlotsNeeded} Slots Filled</span>
-                    </div>
+              <div className="space-y-6">
+                {/* MANAGER STATS SUMMARY */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Active Shifts</span>
+                    <p className="text-xl font-black text-slate-900 mt-1">{scheduleHealthSummary.totalShifts}</p>
                   </div>
-
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Understaffed Shifts</span>
-                      <AlertCircle className="w-5 h-5 text-rose-500" />
-                    </div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-2xl font-black text-rose-600">{scheduleHealthSummary.understaffed}</span>
-                      <span className="text-xs text-rose-500 font-medium">Needs Urgent Staffing</span>
-                    </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Staff Required</span>
+                    <p className="text-xl font-black text-slate-900 mt-1">{scheduleHealthSummary.totalNeeded}</p>
                   </div>
-
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Open Target Slots</span>
-                      <Clock className="w-5 h-5 text-amber-500" />
-                    </div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-2xl font-black text-amber-600">{scheduleHealthSummary.adequate}</span>
-                      <span className="text-xs text-amber-600 font-medium">Has Minimum Coverage</span>
-                    </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Positions Filled</span>
+                    <p className="text-xl font-black text-indigo-600 mt-1">{scheduleHealthSummary.totalAssigned}</p>
                   </div>
-
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Staff Directory</span>
-                      <Users className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-2xl font-black text-slate-900">{workers.length}</span>
-                      <button 
-                        onClick={() => setShowStaffManagementModal(true)}
-                        className="text-xs text-indigo-600 font-bold hover:underline"
-                      >
-                        Manage PINs & Staff →
-                      </button>
-                    </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">Shift Coverage</span>
+                    <p className="text-xl font-black text-emerald-600 mt-1">{scheduleHealthSummary.coveragePercent}%</p>
                   </div>
                 </div>
 
-                {/* CONTROLS BAR */}
-                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddShiftModal(true)}
-                      className="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Create New Shift</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowAddWorkerModal(true)}
-                      className="inline-flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl transition border border-slate-200"
-                    >
-                      <User className="w-4 h-4" />
-                      <span>Add Worker</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowStaffManagementModal(true)}
-                      className="inline-flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl transition border border-slate-200"
-                    >
-                      <Key className="w-4 h-4 text-slate-600" />
-                      <span>Worker PIN Directory</span>
-                    </button>
+                {/* SHIFTS LIST FOR MANAGERS */}
+                {filteredShifts.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
+                    <Calendar className="w-10 h-10 mx-auto text-slate-300" />
+                    <h3 className="text-base font-bold text-slate-700">No shifts scheduled</h3>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Click "Add New Shift" above to create shift slots and assign team members.
+                    </p>
                   </div>
-
-                  <div className="flex items-center space-x-3">
-                    <select
-                      value={selectedDateFilter}
-                      onChange={(e) => setSelectedDateFilter(e.target.value)}
-                      className="bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-xl p-2.5 font-medium cursor-pointer"
-                    >
-                      <option value="ALL">Filter Date: All Dates</option>
-                      {uniqueDates.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => window.print()}
-                      className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl shadow transition"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>Print Schedule</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* SHIFTS ROSTER TABLE & ASSIGNMENTS */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-slate-800">Shift Assignments & Worker Preferences</h3>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {displayedShifts.map(shift => {
-                      const coverage = getShiftCoverageStatus(shift);
+                ) : (
+                  <div className="space-y-4">
+                    {filteredShifts.map(shift => {
+                      const assignedCount = shift.assignedWorkerIds?.length || 0;
+                      const isFullyStaffed = assignedCount >= shift.requiredCount;
 
                       return (
-                        <div key={shift.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-                          <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-                            <div>
-                              <div className="flex items-center space-x-2">
-                                <span className="font-bold text-slate-900 text-base">{shift.timeSlot}</span>
-                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${coverage.badgeBg}`}>
-                                  {coverage.label}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-500 mt-0.5 flex items-center">
-                                <Calendar className="w-3.5 h-3.5 mr-1 text-slate-400" />
-                                <span>{shift.date}</span>
-                                <span className="mx-1.5">•</span>
-                                <MapPin className="w-3.5 h-3.5 mr-1 text-slate-400" />
-                                <span>{shift.location}</span>
-                              </p>
+                        <div key={shift.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-xl">
+                                {shift.date}
+                              </span>
+                              <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-1.5">
+                                <Clock className="w-4 h-4 text-slate-400" />
+                                <span>{shift.timeSlot}</span>
+                              </h3>
+                              <span className="text-xs text-slate-500">({shift.location})</span>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => setEditingShift(shift)}
-                              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition"
-                            >
-                              Edit Rules
-                            </button>
+                            <div className="flex items-center space-x-3">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                                isFullyStaffed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {assignedCount} / {shift.requiredCount} Filled
+                              </span>
+                              <button
+                                onClick={() => handleDeleteShift(shift.id)}
+                                className="text-slate-400 hover:text-rose-600 p-1 transition"
+                                title="Delete Shift"
+                              >
+                                <XCircle className="w-5 h-5" />
+                              </button>
+                            </div>
                           </div>
 
-                          {/* WORKERS LIST WITH PREFERENCE TAGS */}
-                          <div className="space-y-2">
-                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                              Staff Roster ({shift.assignedWorkerIds?.length || 0} / {shift.requiredCount} Min Required):
+                          {/* ASSIGN WORKERS LIST */}
+                          <div>
+                            <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
+                              Assign Staff Members
                             </span>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {workers.map(w => {
-                                const statusKey = `${w.id}_${shift.id}`;
-                                const status = availabilities[statusKey] || 'unset';
-                                const isAssigned = shift.assignedWorkerIds?.includes(w.id);
+                            {workers.length === 0 ? (
+                              <p className="text-xs text-slate-400 italic">No staff members in roster to assign.</p>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {workers.map(w => {
+                                  const isAssigned = shift.assignedWorkerIds?.includes(w.id);
+                                  const workerPref = availabilities[w.id]?.[shift.id];
 
-                                return (
-                                  <div
-                                    key={w.id}
-                                    onClick={() => handleToggleWorkerAssignment(shift.id, w.id)}
-                                    className={`p-2.5 rounded-xl border text-xs cursor-pointer flex items-center justify-between transition ${
-                                      isAssigned
-                                        ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-semibold shadow-xs'
-                                        : 'bg-slate-50/50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <div className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={isAssigned || false}
-                                        onChange={() => {}} // handled by parent onClick
-                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                                      />
+                                  return (
+                                    <button
+                                      key={w.id}
+                                      onClick={() => handleAssignWorkerToShift(shift.id, w.id)}
+                                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition ${
+                                        isAssigned 
+                                          ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200' 
+                                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                      }`}
+                                    >
                                       <div>
-                                        <p className="font-bold leading-tight">{w.name}</p>
-                                        <p className="text-[10px] text-slate-400">{w.role}</p>
+                                        <p className="text-xs font-bold text-slate-800">{w.name}</p>
+                                        <p className="text-[10px] text-slate-500">{w.role}</p>
                                       </div>
-                                    </div>
 
-                                    {/* Availability Tag */}
-                                    {status === 'preferred' && (
-                                      <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[10px] flex items-center">
-                                        <Star className="w-3 h-3 mr-0.5 fill-amber-500 text-amber-500" />
-                                        Preferred
-                                      </span>
-                                    )}
-                                    {status === 'available' && (
-                                      <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] flex items-center">
-                                        <CheckCircle2 className="w-3 h-3 mr-0.5 text-emerald-600" />
-                                        Available
-                                      </span>
-                                    )}
-                                    {status === 'unavailable' && (
-                                      <span className="bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded text-[10px] flex items-center">
-                                        <XCircle className="w-3 h-3 mr-0.5 text-rose-600" />
-                                        Unavailable
-                                      </span>
-                                    )}
-                                    {status === 'unset' && (
-                                      <span className="text-[10px] text-slate-400 italic">No response</span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
+                                      <div className="flex items-center space-x-1.5">
+                                        {workerPref === 'available' && (
+                                          <span className="w-2 h-2 rounded-full bg-emerald-500" title="Prefers Available"></span>
+                                        )}
+                                        {workerPref === 'unavailable' && (
+                                          <span className="w-2 h-2 rounded-full bg-rose-500" title="Prefers Unavailable"></span>
+                                        )}
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                                          isAssigned ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                        }`}>
+                                          {isAssigned ? 'Assigned' : 'Assign'}
+                                        </span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              </>
+                )}
+              </div>
             )}
           </div>
         )}
-
       </main>
 
-      {/* WORKER PIN DIRECTORY MODAL */}
+      {/* STAFF MANAGEMENT MODAL */}
       {showStaffManagementModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-2">
-                <Key className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-lg font-bold text-slate-900">Worker PIN Directory & Staff Access</h3>
-              </div>
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                <span>Staff Roster & Access PINs</span>
+              </h3>
               <button 
                 onClick={() => setShowStaffManagementModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Managers can reset worker access PINs here. Workers use these 4-digit codes to authenticate into their profiles.
-            </p>
-
-            <div className="flex items-center justify-between pt-2">
-              <input
-                type="text"
-                placeholder="Search staff member..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-50 border border-slate-300 text-xs rounded-xl p-2.5 w-64 focus:ring-2 focus:ring-indigo-500"
-              />
+            <div className="flex items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search staff by name, role, email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
 
               <button
                 type="button"
                 onClick={() => setShowPinsInDirectory(!showPinsInDirectory)}
-                className="text-xs text-indigo-600 font-bold hover:underline flex items-center space-x-1"
+                className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl flex items-center space-x-1"
               >
                 {showPinsInDirectory ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                <span>{showPinsInDirectory ? 'Hide PINs' : 'Reveal PINs'}</span>
+                <span>{showPinsInDirectory ? 'Hide PINs' : 'Show PINs'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAddWorkerModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center space-x-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Staff</span>
               </button>
             </div>
 
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-              {searchedWorkers.map(w => (
-                <div key={w.id} className="p-3.5 flex items-center justify-between bg-white hover:bg-slate-50 transition">
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">{w.name}</h4>
-                    <p className="text-xs text-slate-500">{w.role} • {w.phone}</p>
-                  </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {searchedWorkers.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-8">No staff members found. Click "Add Staff" above to create one.</p>
+              ) : (
+                searchedWorkers.map(w => (
+                  <div key={w.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="pr-2">
+                      <h4 className="font-bold text-slate-800 text-xs">{w.name}</h4>
+                      <p className="text-[11px] text-slate-500">{w.role} • {w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
+                    </div>
 
-                  <div className="flex items-center space-x-3">
-                    {editingWorkerPinId === w.id ? (
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="text"
-                          maxLength={4}
-                          value={tempWorkerPin}
-                          onChange={(e) => setTempWorkerPin(e.target.value)}
-                          placeholder="New PIN"
-                          className="w-20 text-center text-xs font-bold bg-slate-50 border border-indigo-400 rounded-lg p-1.5 focus:ring-2 focus:ring-indigo-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateWorkerPin(w.id, tempWorkerPin)}
-                          className="bg-emerald-600 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg shadow"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingWorkerPinId(null)}
-                          className="text-slate-400 text-xs hover:text-slate-600 px-1"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-3">
-                        <span className="font-mono text-xs font-bold bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md border border-slate-200">
-                          {showPinsInDirectory ? w.pin : '••••'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingWorkerPinId(w.id);
-                            setTempWorkerPin(w.pin);
-                          }}
-                          className="text-xs text-indigo-600 font-bold hover:text-indigo-800 flex items-center space-x-1"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Reset PIN</span>
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex items-center space-x-2">
+                      {editingWorkerPinId === w.id ? (
+                        <div className="flex items-center space-x-1">
+                          <input
+                            type="text"
+                            maxLength={4}
+                            placeholder="New PIN"
+                            value={tempWorkerPin}
+                            onChange={(e) => setTempWorkerPin(e.target.value)}
+                            className="w-16 text-center text-xs border border-slate-300 rounded p-1 font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateWorkerPin(w.id, tempWorkerPin)}
+                            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200 font-bold">
+                            {showPinsInDirectory ? w.pin : '••••'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingWorkerPinId(w.id);
+                              setTempWorkerPin(w.pin);
+                            }}
+                            className="text-[11px] text-indigo-600 hover:underline font-semibold"
+                          >
+                            Edit PIN
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteWorker(w.id)}
+                        title="Delete Worker"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             <div className="pt-2 flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowStaffManagementModal(false)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
               >
                 Done
               </button>
@@ -1149,12 +837,102 @@ export default function App() {
         </div>
       )}
 
-      {/* CREATE NEW SHIFT MODAL */}
-      {showAddShiftModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+      {/* ADD WORKER MODAL */}
+      {showAddWorkerModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Create New Shift Slot</h3>
+              <h3 className="text-lg font-bold text-slate-900">Add New Staff Member</h3>
+              <button onClick={() => setShowAddWorkerModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateWorker} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Jane Doe"
+                  value={newWorker.name}
+                  onChange={(e) => setNewWorker({ ...newWorker, name: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Role / Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Barista"
+                  value={newWorker.role}
+                  onChange={(e) => setNewWorker({ ...newWorker, role: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  placeholder="e.g. jane.doe@example.com"
+                  value={newWorker.email}
+                  onChange={(e) => setNewWorker({ ...newWorker, email: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  placeholder="e.g. (555) 019-9999"
+                  value={newWorker.phone}
+                  onChange={(e) => setNewWorker({ ...newWorker, phone: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">4-Digit PIN (Optional)</label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  placeholder="Auto-generated if left blank"
+                  value={newWorker.pin}
+                  onChange={(e) => setNewWorker({ ...newWorker, pin: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddWorkerModal(false)}
+                  className="bg-slate-100 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700"
+                >
+                  Save Staff Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD SHIFT MODAL */}
+      {showAddShiftModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900">Create Shift Slot</h3>
               <button onClick={() => setShowAddShiftModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
@@ -1162,77 +940,63 @@ export default function App() {
 
             <form onSubmit={handleCreateShift} className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Shift Date</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date</label>
                 <input
                   type="date"
                   required
                   value={newShift.date}
                   onChange={(e) => setNewShift({ ...newShift, date: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Time Slot Title</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Time Slot</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Morning (08:00 AM - 04:00 PM)"
                   value={newShift.timeSlot}
                   onChange={(e) => setNewShift({ ...newShift, timeSlot: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Location / Department</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Location / Branch</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Main Branch - Front Desk"
+                  placeholder="e.g. Main Branch"
                   value={newShift.location}
                   onChange={(e) => setNewShift({ ...newShift, location: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Min Required Staff</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={newShift.requiredCount}
-                    onChange={(e) => setNewShift({ ...newShift, requiredCount: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Ideal Target Staff</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={newShift.idealCount}
-                    onChange={(e) => setNewShift({ ...newShift, idealCount: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Required Workers Count</label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={newShift.requiredCount}
+                  onChange={(e) => setNewShift({ ...newShift, requiredCount: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
               </div>
 
               <div className="pt-3 flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowAddShiftModal(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="bg-slate-100 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow"
+                  className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700"
                 >
                   Create Shift
                 </button>
@@ -1242,229 +1006,46 @@ export default function App() {
         </div>
       )}
 
-      {/* EDIT SHIFT RULES MODAL */}
-      {editingShift && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Edit Shift Requirements</h3>
-              <button onClick={() => setEditingShift(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateShiftParams} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Time Slot Title</label>
-                <input
-                  type="text"
-                  required
-                  value={editingShift.timeSlot}
-                  onChange={(e) => setEditingShift({ ...editingShift, timeSlot: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Location</label>
-                <input
-                  type="text"
-                  required
-                  value={editingShift.location}
-                  onChange={(e) => setEditingShift({ ...editingShift, location: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Min Required Staff</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={editingShift.requiredCount}
-                    onChange={(e) => setEditingShift({ ...editingShift, requiredCount: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Ideal Target Staff</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={editingShift.idealCount}
-                    onChange={(e) => setEditingShift({ ...editingShift, idealCount: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingShift(null)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow"
-                >
-                  Save Requirements
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ADD WORKER MODAL */}
-      {showAddWorkerModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Add Staff Member</h3>
-              <button onClick={() => setShowAddWorkerModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateWorker} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Jordan Lee"
-                  value={newWorker.name}
-                  onChange={(e) => setNewWorker({ ...newWorker, name: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Role / Position</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Barista, Kitchen Associate"
-                  value={newWorker.role}
-                  onChange={(e) => setNewWorker({ ...newWorker, role: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Phone Number</label>
-                <input
-                  type="text"
-                  placeholder="e.g. (555) 019-9988"
-                  value={newWorker.phone}
-                  onChange={(e) => setNewWorker({ ...newWorker, phone: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">4-Digit Access PIN (Optional)</label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  placeholder="e.g. 7788 (auto-generated if empty)"
-                  value={newWorker.pin}
-                  onChange={(e) => setNewWorker({ ...newWorker, pin: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddWorkerModal(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow"
-                >
-                  Save Member
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* MY SCHEDULE REPORT MODAL */}
-      {showMyScheduleModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+      {showMyScheduleModal && currentWorker && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-lg font-bold text-slate-900">My Personal Schedule Report</h3>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Personal Shift Schedule</h3>
+                <p className="text-xs text-slate-500">Assigned shifts for {currentWorker.name}</p>
               </div>
               <button onClick={() => setShowMyScheduleModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl flex items-center space-x-3">
-              <User className="w-5 h-5 text-indigo-600 flex-shrink-0" />
-              <div>
-                <p className="font-bold text-xs text-indigo-950">{currentWorker?.name}</p>
-                <p className="text-[11px] text-indigo-700">{currentWorker?.role} • {currentWorker?.phone}</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Assigned Upcoming Shifts ({myAssignedShifts.length})
-              </h4>
-
-              {myAssignedShifts.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400 border border-slate-200 rounded-xl italic">
-                  You are not currently scheduled for any upcoming shifts.
-                </div>
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {shifts.filter(s => s.assignedWorkerIds?.includes(currentWorker.id)).length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-8">You are not currently assigned to any scheduled shifts.</p>
               ) : (
-                <div className="space-y-2">
-                  {myAssignedShifts.map(s => (
-                    <div key={s.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
+                shifts
+                  .filter(s => s.assignedWorkerIds?.includes(currentWorker.id))
+                  .map(s => (
+                    <div key={s.id} className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
                       <div>
-                        <span className="font-bold text-slate-900 block">{s.timeSlot}</span>
-                        <span className="text-slate-500 flex items-center mt-1">
-                          <Calendar className="w-3 h-3 mr-1" />
-                          {s.date} • {s.location}
-                        </span>
+                        <span className="text-[11px] font-bold text-indigo-700">{s.date}</span>
+                        <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
+                        <p className="text-[11px] text-slate-500">{s.location}</p>
                       </div>
-                      <span className="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2.5 py-1 rounded-full">
                         Confirmed
                       </span>
                     </div>
-                  ))}
-                </div>
+                  ))
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="text-xs font-bold text-slate-700 hover:text-slate-900 flex items-center space-x-1"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Schedule</span>
-              </button>
-
+            <div className="pt-2 flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowMyScheduleModal(false)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
               >
                 Close
               </button>
@@ -1472,7 +1053,6 @@ export default function App() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
