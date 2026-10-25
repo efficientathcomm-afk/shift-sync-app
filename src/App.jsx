@@ -366,16 +366,36 @@ export default function App() {
     let totalNeeded = 0;
     let totalTarget = 0;
     let totalAssigned = 0;
+    let needsStaffCount = 0;
+    let openSlotsCount = 0;
+    let fullyStaffedCount = 0;
+
     shifts.forEach(s => {
-      totalNeeded += (s.requiredCount || 0);
-      totalTarget += (s.idealCount || s.requiredCount || 0);
-      totalAssigned += (s.assignedWorkerIds?.length || 0);
+      const assigned = s.assignedWorkerIds?.length || 0;
+      const required = s.requiredCount || 1;
+      const target = s.idealCount || required;
+
+      totalNeeded += required;
+      totalTarget += target;
+      totalAssigned += assigned;
+
+      if (assigned === 0) {
+        needsStaffCount++;
+      } else if (assigned < required) {
+        openSlotsCount++;
+      } else {
+        fullyStaffedCount++;
+      }
     });
+
     return {
       totalShifts: shifts.length,
       totalNeeded,
       totalTarget,
       totalAssigned,
+      needsStaffCount,
+      openSlotsCount,
+      fullyStaffedCount,
       coveragePercent: totalNeeded === 0 ? 100 : Math.min(100, Math.round((totalAssigned / totalNeeded) * 100))
     };
   }, [shifts]);
@@ -426,33 +446,35 @@ export default function App() {
       </header>
 
       {/* UPCOMING SHIFT COVERAGE STATUS BAR AT TOP */}
-      <div className="bg-slate-800 text-slate-200 border-b border-slate-700 py-2.5 px-4 print:hidden">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-medium">
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="w-4 h-4 text-indigo-400" />
-            <span className="font-bold text-white">Upcoming Shift Coverage Status:</span>
-            <span>
-              <strong className="text-emerald-400">{scheduleHealthSummary.totalAssigned}</strong> assigned of{' '}
-              <strong className="text-slate-300">{scheduleHealthSummary.totalNeeded} required</strong>{' '}
-              (Target: <strong className="text-indigo-300">{scheduleHealthSummary.totalTarget}</strong>)
-            </span>
-          </div>
-          <div className="flex items-center space-x-3 w-full sm:w-48">
-            <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-              <div 
-                className={`h-full transition-all duration-500 ${
-                  scheduleHealthSummary.coveragePercent >= 100 
-                    ? 'bg-emerald-500' 
-                    : scheduleHealthSummary.coveragePercent >= 50 
-                    ? 'bg-indigo-500' 
-                    : 'bg-amber-500'
-                }`} 
-                style={{ width: `${Math.min(100, scheduleHealthSummary.coveragePercent)}%` }}
-              ></div>
+      <div className="max-w-6xl mx-auto px-4 pt-4 print:hidden">
+        <div className="bg-[#111633] text-white rounded-2xl p-4 shadow-lg border border-slate-800/80 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5 w-full md:w-auto">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 shrink-0">
+              <AlertCircle className="w-5 h-5" />
             </div>
-            <span className="font-extrabold text-white text-[11px] min-w-[36px] text-right">
-              {scheduleHealthSummary.coveragePercent}%
-            </span>
+            <div>
+              <h2 className="text-sm font-black text-white tracking-wide">Upcoming Shift Coverage Status</h2>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                {scheduleHealthSummary.totalShifts} Upcoming Shifts • Mark preferred or available to help managers fill open slots!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2.5 w-full md:w-auto justify-end overflow-x-auto">
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold whitespace-nowrap">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+              <span>{scheduleHealthSummary.needsStaffCount} Needs Staff</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold whitespace-nowrap">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>{scheduleHealthSummary.openSlotsCount} Open Slots</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold whitespace-nowrap">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{scheduleHealthSummary.fullyStaffedCount} Fully Staffed</span>
+            </div>
           </div>
         </div>
       </div>
@@ -657,15 +679,31 @@ export default function App() {
                             {/* STAFFING PROGRESS BAR FOR WORKERS */}
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                               <div className="flex justify-between items-center text-[11px]">
-                                <span className="font-bold text-slate-600">Staffing Progress:</span>
-                                <span className="font-extrabold text-slate-800">
-                                  {assignedCount} / {requiredCount} req (Target: {targetCount})
+                                {assignedCount < requiredCount ? (
+                                  <span className="font-extrabold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                    Needs {requiredCount - assignedCount} More Worker{requiredCount - assignedCount > 1 ? 's' : ''}!
+                                  </span>
+                                ) : assignedCount < targetCount ? (
+                                  <span className="font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                    Min Met ({targetCount - assignedCount} to Target)
+                                  </span>
+                                ) : (
+                                  <span className="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                    Fully Staffed (Target Reached)
+                                  </span>
+                                )}
+                                <span className="font-extrabold text-slate-700">
+                                  {assignedCount} / {requiredCount} Min ({targetCount} Target)
                                 </span>
                               </div>
-                              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden flex">
                                 <div 
-                                  className={`h-full transition-all ${
-                                    assignedCount >= requiredCount ? 'bg-emerald-500' : 'bg-indigo-500'
+                                  className={`h-full transition-all duration-300 ${
+                                    assignedCount < requiredCount 
+                                      ? 'bg-rose-500' 
+                                      : assignedCount < targetCount 
+                                        ? 'bg-amber-400' 
+                                        : 'bg-emerald-500'
                                   }`}
                                   style={{ width: `${Math.min(100, (assignedCount / targetCount) * 100)}%` }}
                                 ></div>
@@ -926,10 +964,14 @@ export default function App() {
                             </div>
 
                             <div className="flex items-center space-x-3">
-                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                                isFullyStaffed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                assignedCount >= targetCount
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : assignedCount >= requiredCount
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                    : 'bg-rose-100 text-rose-800 border-rose-300'
                               }`}>
-                                {assignedCount} / {requiredCount} Required (Target: {targetCount})
+                                {assignedCount} / {requiredCount} Min ({targetCount} Target)
                               </span>
                               <button
                                 onClick={() => {
