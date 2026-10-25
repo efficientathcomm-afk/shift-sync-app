@@ -2,21 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
-import { 
-  Users, 
-  Calendar, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Plus, 
-  Search, 
-  FileText, 
-  X, 
-  ShieldCheck, 
+import { 
+  Users, 
+  Calendar, 
+  Clock, 
+  CheckCircle, 
+  XCircle, 
+  AlertCircle, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Plus, 
+  Search, 
+  FileText, 
+  X, 
+  ShieldCheck, 
   ChevronRight,
   UserCheck,
   Building,
@@ -48,9 +48,15 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
       appId: "1:1234567890:web:abcdef123456"
     };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.warn("Firebase initialization fallback:", e);
+}
+
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'shift-manager-app';
 
 // Helper function to generate upcoming dates (next 7 days starting today)
@@ -145,11 +151,11 @@ export default function App() {
   const [newPosDept, setNewPosDept] = useState('');
   const [newPosLoc, setNewPosLoc] = useState('');
 
-  const [newWorker, setNewWorker] = useState({ 
-    name: '', 
-    role: 'Barista', 
-    email: '', 
-    phone: '', 
+  const [newWorker, setNewWorker] = useState({ 
+    name: '', 
+    role: 'Barista', 
+    email: '', 
+    phone: '', 
     pin: '',
     allowedLocation: '',
     allowedDepartment: '',
@@ -172,8 +178,12 @@ export default function App() {
     window.print();
   };
 
-  // Firebase Authentication setup
+  // Firebase Authentication setup with robust fallback
   useEffect(() => {
+    if (!auth) {
+      setUser({ uid: 'local-fallback-user' });
+      return;
+    }
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -182,17 +192,40 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.error("Auth error:", err);
+        console.warn("Auth fallback warning:", err);
+        setUser({ uid: 'local-fallback-user' });
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setUser(usr || { uid: 'local-fallback-user' });
+    });
     return () => unsubscribe();
   }, []);
 
-  // Sync state with Firestore collections (Public data path adhering to rule 1)
+  // Sync state with Firestore collections with localStorage fallback for external deployments like Vercel
   useEffect(() => {
-    if (!user) return;
+    if (!db) {
+      // Load from localStorage if offline/external
+      try {
+        const localWorkers = localStorage.getItem('shiftsync_workers');
+        const localShifts = localStorage.getItem('shiftsync_shifts');
+        const localAvail = localStorage.getItem('shiftsync_avail');
+        const localLocs = localStorage.getItem('shiftsync_locs');
+        const localDepts = localStorage.getItem('shiftsync_depts');
+        const localPoss = localStorage.getItem('shiftsync_poss');
+
+        if (localWorkers) setWorkers(JSON.parse(localWorkers));
+        if (localShifts) setShifts(JSON.parse(localShifts));
+        if (localAvail) setAvailabilities(JSON.parse(localAvail));
+        if (localLocs) setLocations(JSON.parse(localLocs));
+        if (localDepts) setDepartments(JSON.parse(localDepts));
+        if (localPoss) setPositions(JSON.parse(localPoss));
+      } catch (e) {
+        console.error("Local storage load error:", e);
+      }
+      return;
+    }
 
     const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
     const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
@@ -201,29 +234,47 @@ export default function App() {
 
     const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(w => !w._deleted);
-      if (data.length > 0) setWorkers(data);
-    }, (error) => console.error("Workers fetch error:", error));
+      if (data.length > 0) {
+        setWorkers(data);
+        localStorage.setItem('shiftsync_workers', JSON.stringify(data));
+      }
+    }, (error) => console.warn("Workers fetch warning:", error));
 
     const unsubShifts = onSnapshot(shiftsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(s => !s._deleted);
-      if (data.length > 0) setShifts(data);
-    }, (error) => console.error("Shifts fetch error:", error));
+      if (data.length > 0) {
+        setShifts(data);
+        localStorage.setItem('shiftsync_shifts', JSON.stringify(data));
+      }
+    }, (error) => console.warn("Shifts fetch warning:", error));
 
     const unsubAvail = onSnapshot(availCol, (snapshot) => {
       const availObj = {};
       snapshot.docs.forEach(doc => {
         availObj[doc.id] = doc.data();
       });
-      if (Object.keys(availObj).length > 0) setAvailabilities(availObj);
-    }, (error) => console.error("Avail fetch error:", error));
+      if (Object.keys(availObj).length > 0) {
+        setAvailabilities(availObj);
+        localStorage.setItem('shiftsync_avail', JSON.stringify(availObj));
+      }
+    }, (error) => console.warn("Avail fetch warning:", error));
 
     const unsubOrg = onSnapshot(orgCol, (snapshot) => {
       snapshot.docs.forEach(doc => {
-        if (doc.id === 'locations' && doc.data().list) setLocations(doc.data().list);
-        if (doc.id === 'departments' && doc.data().list) setDepartments(doc.data().list);
-        if (doc.id === 'positions' && doc.data().list) setPositions(doc.data().list);
+        if (doc.id === 'locations' && doc.data().list) {
+          setLocations(doc.data().list);
+          localStorage.setItem('shiftsync_locs', JSON.stringify(doc.data().list));
+        }
+        if (doc.id === 'departments' && doc.data().list) {
+          setDepartments(doc.data().list);
+          localStorage.setItem('shiftsync_depts', JSON.stringify(doc.data().list));
+        }
+        if (doc.id === 'positions' && doc.data().list) {
+          setPositions(doc.data().list);
+          localStorage.setItem('shiftsync_poss', JSON.stringify(doc.data().list));
+        }
       });
-    }, (error) => console.error("Org fetch error:", error));
+    }, (error) => console.warn("Org fetch warning:", error));
 
     return () => {
       unsubWorkers();
@@ -272,99 +323,122 @@ export default function App() {
     }
   };
 
+  // Helper saver for DB + LocalStorage fallback
+  const saveDataToCloudOrLocal = async (collectionPath, docId, dataPayload, localKey, updatedState) => {
+    // Always update React state & localStorage immediately for instant UI response
+    if (updatedState !== undefined) updatedState();
+
+    try {
+      if (db) {
+        const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionPath, docId);
+        await setDoc(ref, dataPayload, { merge: true });
+      }
+    } catch (err) {
+      console.warn("Cloud write fallback error:", err);
+    }
+  };
+
   // Profile Save Handler (Worker Self or Manager Editing)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    if (!editingProfile || !editingProfile.name.trim() || !user) return;
+    if (!editingProfile || !editingProfile.name.trim()) return;
 
-    setWorkers(prev => prev.map(w => w.id === editingProfile.id ? editingProfile : w));
+    const updatedWorkers = workers.map(w => w.id === editingProfile.id ? editingProfile : w);
+    setWorkers(updatedWorkers);
+    localStorage.setItem('shiftsync_workers', JSON.stringify(updatedWorkers));
     setShowEditProfileModal(false);
 
     try {
-      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', editingProfile.id);
-      await setDoc(workerRef, editingProfile, { merge: true });
+      if (db) {
+        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', editingProfile.id);
+        await setDoc(workerRef, editingProfile, { merge: true });
+      }
     } catch (err) {
-      console.error("Error saving profile:", err);
+      console.warn("Save profile cloud error:", err);
     }
   };
 
   // Org Structure Handlers
   const handleAddLocation = async () => {
-    if (!newLocName.trim() || locations.includes(newLocName.trim()) || !user) return;
+    if (!newLocName.trim() || locations.includes(newLocName.trim())) return;
     const updated = [...locations, newLocName.trim()];
     setLocations(updated);
     setNewLocName('');
+    localStorage.setItem('shiftsync_locs', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {
-      console.error("Error adding location:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleSaveEditLocation = async (index) => {
-    if (!editLocName.trim() || !user) return;
+    if (!editLocName.trim()) return;
     const updated = [...locations];
     updated[index] = editLocName.trim();
     setLocations(updated);
     setEditingLocIndex(null);
     setEditLocName('');
+    localStorage.setItem('shiftsync_locs', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {
-      console.error("Error editing location:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleDeleteLocation = async (index) => {
-    if (!user) return;
     const updated = locations.filter((_, i) => i !== index);
     setLocations(updated);
+    localStorage.setItem('shiftsync_locs', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {
-      console.error("Error deleting location:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleAddDepartment = async () => {
-    if (!newDeptName.trim() || departments.includes(newDeptName.trim()) || !user) return;
+    if (!newDeptName.trim() || departments.includes(newDeptName.trim())) return;
     const updated = [...departments, newDeptName.trim()];
     setDepartments(updated);
     setNewDeptName('');
+    localStorage.setItem('shiftsync_depts', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {
-      console.error("Error adding department:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleSaveEditDepartment = async (index) => {
-    if (!editDeptName.trim() || !user) return;
+    if (!editDeptName.trim()) return;
     const updated = [...departments];
     updated[index] = editDeptName.trim();
     setDepartments(updated);
     setEditingDeptIndex(null);
     setEditDeptName('');
+    localStorage.setItem('shiftsync_depts', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {
-      console.error("Error editing department:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleDeleteDepartment = async (index) => {
-    if (!user) return;
     const updated = departments.filter((_, i) => i !== index);
     setDepartments(updated);
+    localStorage.setItem('shiftsync_depts', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {
-      console.error("Error deleting department:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleAddPosition = async () => {
-    if (!newPosName.trim() || !user) return;
+    if (!newPosName.trim()) return;
     const newPos = {
       id: 'p_' + Date.now(),
       name: newPosName.trim(),
@@ -376,15 +450,16 @@ export default function App() {
     setNewPosName('');
     setNewPosDept('');
     setNewPosLoc('');
+    localStorage.setItem('shiftsync_poss', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {
-      console.error("Error adding position:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleSaveEditPosition = async (posId) => {
-    if (!editPosName.trim() || !user) return;
+    if (!editPosName.trim()) return;
     const updated = positions.map(p => p.id === posId ? {
       ...p,
       name: editPosName.trim(),
@@ -396,27 +471,28 @@ export default function App() {
     setEditPosName('');
     setEditPosDept('');
     setEditPosLoc('');
+    localStorage.setItem('shiftsync_poss', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {
-      console.error("Error editing position:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleDeletePosition = async (posId) => {
-    if (!user) return;
     const updated = positions.filter(p => p.id !== posId);
     setPositions(updated);
+    localStorage.setItem('shiftsync_poss', JSON.stringify(updated));
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {
-      console.error("Error deleting position:", e);
-    }
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const handleCreateWorker = async (e) => {
     e.preventDefault();
-    if (!newWorker.name.trim() || !user) return;
+    if (!newWorker.name.trim()) return;
     const newId = 'w_' + Date.now();
     const assignedPin = newWorker.pin.trim() || Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -432,38 +508,43 @@ export default function App() {
       allowedPosition: newWorker.allowedPosition || ''
     };
 
-    setWorkers(prev => [...prev, createdWorker]);
+    const updated = [...workers, createdWorker];
+    setWorkers(updated);
     setSelectedWorkerId(newId);
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
-    setNewWorker({ 
-      name: '', 
-      role: 'Barista', 
-      email: '', 
-      phone: '', 
+    setNewWorker({ 
+      name: '', 
+      role: 'Barista', 
+      email: '', 
+      phone: '', 
       pin: '',
       allowedLocation: '',
       allowedDepartment: '',
       allowedPosition: ''
     });
 
+    localStorage.setItem('shiftsync_workers', JSON.stringify(updated));
     try {
-      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
-      await setDoc(workerRef, createdWorker);
-    } catch (err) {
-      console.error("Error creating worker:", err);
-    }
+      if (db) {
+        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
+        await setDoc(workerRef, createdWorker);
+      }
+    } catch (err) { console.warn(err); }
   };
 
   const handleDeleteWorker = async (workerId) => {
-    if (!user) return;
-    setWorkers(prev => prev.filter(w => w.id !== workerId));
+    const updatedWorkers = workers.filter(w => w.id !== workerId);
+    setWorkers(updatedWorkers);
+    localStorage.setItem('shiftsync_workers', JSON.stringify(updatedWorkers));
 
-    setShifts(prev => prev.map(s => ({
+    const updatedShifts = shifts.map(s => ({
       ...s,
       assignedPositions: (s.assignedPositions || []).filter(ap => ap.workerId !== workerId),
       assignedWorkerIds: s.assignedWorkerIds?.filter(id => id !== workerId) || []
-    })));
+    }));
+    setShifts(updatedShifts);
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
 
     if (selectedWorkerId === workerId) {
       setIsWorkerAuthenticated(false);
@@ -471,57 +552,60 @@ export default function App() {
     }
 
     try {
-      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
-      await setDoc(workerRef, { _deleted: true });
-    } catch (err) {
-      console.error("Error deleting worker:", err);
-    }
+      if (db) {
+        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
+        await setDoc(workerRef, { _deleted: true });
+      }
+    } catch (err) { console.warn(err); }
   };
 
   const handleUpdateWorkerPin = async (workerId, newPin) => {
-    if (!newPin.trim() || !user) return;
-    setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, pin: newPin.trim() } : w));
+    if (!newPin.trim()) return;
+    const updated = workers.map(w => w.id === workerId ? { ...w, pin: newPin.trim() } : w);
+    setWorkers(updated);
     setEditingWorkerPinId(null);
+    localStorage.setItem('shiftsync_workers', JSON.stringify(updated));
 
     try {
-      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
-      await setDoc(workerRef, { pin: newPin.trim() }, { merge: true });
-    } catch (err) {
-      console.error("Error updating PIN:", err);
-    }
+      if (db) {
+        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
+        await setDoc(workerRef, { pin: newPin.trim() }, { merge: true });
+      }
+    } catch (err) { console.warn(err); }
   };
 
   const handleAvailabilityToggle = async (shiftId, status) => {
-    if (!currentWorker || !user) return;
+    if (!currentWorker) return;
 
     const updatedUserMap = {
       ...(availabilities[currentWorker.id] || {}),
       [shiftId]: status
     };
 
-    setAvailabilities(prev => ({
-      ...prev,
+    const updatedAvail = {
+      ...availabilities,
       [currentWorker.id]: updatedUserMap
-    }));
+    };
+
+    setAvailabilities(updatedAvail);
+    localStorage.setItem('shiftsync_avail', JSON.stringify(updatedAvail));
 
     setSubmissionSuccess(true);
     setTimeout(() => setSubmissionSuccess(false), 3000);
 
     try {
-      const availRef = doc(db, 'artifacts', appId, 'public', 'data', 'availabilities', currentWorker.id);
-      await setDoc(availRef, updatedUserMap, { merge: true });
-    } catch (err) {
-      console.error("Error saving availability:", err);
-    }
+      if (db) {
+        const availRef = doc(db, 'artifacts', appId, 'public', 'data', 'availabilities', currentWorker.id);
+        await setDoc(availRef, updatedUserMap, { merge: true });
+      }
+    } catch (err) { console.warn(err); }
   };
 
   // Create / Edit Shift submit
   const handleCreateShift = async (e) => {
     e.preventDefault();
-    if (!user) return;
     const newId = editingShift ? editingShift.id : 's_' + Date.now();
     
-    // Automatically calculate required and target staff counts from positions selection
     const reqCount = newShift.positionsList.filter(p => p.required).length;
     const targCount = newShift.positionsList.length;
 
@@ -537,12 +621,16 @@ export default function App() {
       assignedPositions: editingShift ? (editingShift.assignedPositions || []) : []
     };
 
+    let updatedShifts;
     if (editingShift) {
-      setShifts(prev => prev.map(s => s.id === newId ? createdShift : s));
+      updatedShifts = shifts.map(s => s.id === newId ? createdShift : s);
       setEditingShift(null);
     } else {
-      setShifts(prev => [...prev, createdShift]);
+      updatedShifts = [...shifts, createdShift];
     }
+
+    setShifts(updatedShifts);
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
 
     setShowAddShiftModal(false);
     setNewShift({
@@ -554,27 +642,24 @@ export default function App() {
     });
 
     try {
-      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
-      await setDoc(shiftRef, createdShift);
-    } catch (err) {
-      console.error("Error creating/editing shift:", err);
-    }
+      if (db) {
+        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
+        await setDoc(shiftRef, createdShift);
+      }
+    } catch (err) { console.warn(err); }
   };
 
   // Manager assigns worker to specific position slot within a shift
   const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
-    if (!user) return;
     let updatedShift;
-    setShifts(prev => prev.map(s => {
+    const updatedShifts = shifts.map(s => {
       if (s.id === shiftId) {
         const currentAssigned = [...(s.assignedPositions || [])];
         const existingIdx = currentAssigned.findIndex(ap => ap.slotIndex === slotIndex);
 
         if (!workerId) {
-          // Unassigning
           if (existingIdx !== -1) currentAssigned.splice(existingIdx, 1);
         } else {
-          // If this worker is already assigned to another slot in this shift, clear that slot first
           const otherIdx = currentAssigned.findIndex(ap => ap.workerId === workerId);
           if (otherIdx !== -1) currentAssigned.splice(otherIdx, 1);
 
@@ -590,31 +675,35 @@ export default function App() {
         return updatedShift;
       }
       return s;
-    }));
+    });
+
+    setShifts(updatedShifts);
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
 
     if (updatedShift) {
       try {
-        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
-        await setDoc(shiftRef, updatedShift, { merge: true });
-      } catch (err) {
-        console.error("Error assigning worker:", err);
-      }
+        if (db) {
+          const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
+          await setDoc(shiftRef, updatedShift, { merge: true });
+        }
+      } catch (err) { console.warn(err); }
     }
   };
 
   const handleDeleteShift = async (shiftId) => {
-    if (!user) return;
-    setShifts(prev => prev.filter(s => s.id !== shiftId));
+    const updated = shifts.filter(s => s.id !== shiftId);
+    setShifts(updated);
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(updated));
+
     try {
-      const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
-      await setDoc(shiftRef, { _deleted: true });
-    } catch (err) {
-      console.error("Error deleting shift:", err);
-    }
+      if (db) {
+        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
+        await setDoc(shiftRef, { _deleted: true });
+      }
+    } catch (err) { console.warn(err); }
   };
 
-  const handleSeedDemoData = async () => {
-    if (!user) return;
+  const handleSeedDemoData = () => {
     const defaultWorkers = [
       { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocation: 'Downtown Hub', allowedDepartment: '', allowedPosition: '' },
       { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocation: '', allowedDepartment: 'Management', allowedPosition: '' },
@@ -622,14 +711,14 @@ export default function App() {
     ];
 
     const defaultShifts = [
-      { 
-        id: 's_1', 
-        date: SAMPLE_DATES[0], 
-        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
-        location: 'Downtown Hub', 
+      { 
+        id: 's_1', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
+        location: 'Downtown Hub', 
         department: 'Front of House',
-        requiredCount: 2, 
-        idealCount: 3, 
+        requiredCount: 2, 
+        idealCount: 3, 
         positionsList: [
           { positionId: 'p_1', positionName: 'Head Barista', required: true },
           { positionId: 'p_2', positionName: 'Barista', required: true },
@@ -638,22 +727,22 @@ export default function App() {
         assignedPositions: [
           { slotIndex: 0, workerId: 'w_1' }
         ],
-        assignedWorkerIds: ['w_1'] 
+        assignedWorkerIds: ['w_1'] 
       },
-      { 
-        id: 's_2', 
-        date: SAMPLE_DATES[0], 
-        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
-        location: 'Downtown Hub', 
+      { 
+        id: 's_2', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
+        location: 'Downtown Hub', 
         department: 'Kitchen / Back of House',
-        requiredCount: 2, 
-        idealCount: 2, 
+        requiredCount: 2, 
+        idealCount: 2, 
         positionsList: [
           { positionId: 'p_4', positionName: 'Line Cook', required: true },
           { positionId: 'p_4', positionName: 'Line Cook', required: true }
         ],
         assignedPositions: [],
-        assignedWorkerIds: [] 
+        assignedWorkerIds: [] 
       }
     ];
 
@@ -661,25 +750,17 @@ export default function App() {
     setShifts(defaultShifts);
     setSelectedWorkerId(defaultWorkers[0].id);
 
-    try {
-      for (const w of defaultWorkers) {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'workers', w.id), w);
-      }
-      for (const s of defaultShifts) {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', s.id), s);
-      }
-    } catch (e) {
-      console.error("Error seeding demo data:", e);
-    }
+    localStorage.setItem('shiftsync_workers', JSON.stringify(defaultWorkers));
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(defaultShifts));
   };
 
   // Filter workers based on search modal input
   const searchedWorkers = useMemo(() => {
     if (!searchQuery.trim()) return workers;
     const q = searchQuery.toLowerCase();
-    return workers.filter(w => 
-      w.name.toLowerCase().includes(q) || 
-      w.role.toLowerCase().includes(q) || 
+    return workers.filter(w => 
+      w.name.toLowerCase().includes(q) || 
+      w.role.toLowerCase().includes(q) || 
       w.email.toLowerCase().includes(q)
     );
   }, [workers, searchQuery]);
@@ -688,7 +769,6 @@ export default function App() {
   const filteredShifts = useMemo(() => {
     let list = shifts;
 
-    // Apply worker profile restrictions if in Worker view
     if (activeTab === 'worker' && currentWorker) {
       if (currentWorker.allowedLocation) {
         list = list.filter(s => s.location === currentWorker.allowedLocation);
@@ -756,7 +836,6 @@ export default function App() {
     };
   }, [shifts]);
 
-  // Helper to toggle position in shift creation
   const togglePositionInShiftNew = (pos) => {
     setNewShift(prev => {
       const existing = [...prev.positionsList];
@@ -803,8 +882,8 @@ export default function App() {
             <button
               onClick={() => setActiveTab('worker')}
               className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'worker' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
+                activeTab === 'worker' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
@@ -814,8 +893,8 @@ export default function App() {
             <button
               onClick={() => setActiveTab('manager')}
               className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'manager' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
+                activeTab === 'manager' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
@@ -933,7 +1012,7 @@ export default function App() {
               <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2">
                 <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>
-                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
+                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
                   {currentWorker.allowedLocation && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Location: {currentWorker.allowedLocation}</span>}
                   {currentWorker.allowedDepartment && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Dept: {currentWorker.allowedDepartment}</span>}
                   {currentWorker.allowedPosition && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Pos: {currentWorker.allowedPosition}</span>}
@@ -1057,22 +1136,21 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
-                       
-                      // Check if worker is assigned in any position for this shift
+                      
                       const assignedSlots = shift.assignedPositions || [];
                       const isAssigned = assignedSlots.some(ap => ap.workerId === currentWorker.id);
-                       
+                      
                       const assignedCount = assignedSlots.length;
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
 
                       return (
-                        <div 
-                          key={shift.id} 
+                        <div 
+                          key={shift.id} 
                           onClick={() => setInspectingShift(shift)}
                           className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md ${
-                            isAssigned 
-                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                            isAssigned 
+                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
                               : 'border-slate-200 hover:border-indigo-300'
                           }`}
                         >
@@ -1128,12 +1206,12 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden flex">
-                                <div 
+                                <div 
                                   className={`h-full transition-all duration-300 ${
-                                    assignedCount < requiredCount 
-                                      ? 'bg-rose-500' 
-                                      : assignedCount < targetCount 
-                                        ? 'bg-amber-400' 
+                                    assignedCount < requiredCount 
+                                      ? 'bg-rose-500' 
+                                      : assignedCount < targetCount 
+                                        ? 'bg-amber-400' 
                                         : 'bg-emerald-500'
                                   }`}
                                   style={{ width: `${Math.min(100, (assignedCount / Math.max(1, targetCount)) * 100)}%` }}
@@ -1148,8 +1226,8 @@ export default function App() {
                           </div>
 
                           {/* WORKER AVAILABILITY SELECTOR */}
-                          <div 
-                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
+                          <div 
+                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
                             onClick={(e) => e.stopPropagation()}
                           >
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
@@ -1438,8 +1516,8 @@ export default function App() {
                                   const assignedWorker = workers.find(w => w.id === assignment?.workerId);
 
                                   return (
-                                    <div 
-                                      key={idx} 
+                                    <div 
+                                      key={idx} 
                                       className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${
                                         assignedWorker
                                           ? 'bg-slate-50 border-slate-300'
@@ -1730,7 +1808,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL (LOCATIONS, DEPARTMENTS, POSITIONS) */}
+      {/* ORGANIZATIONAL SETUP MODAL */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
@@ -1904,7 +1982,7 @@ export default function App() {
                 <Briefcase className="w-4 h-4 text-indigo-600" />
                 <span>Positions / Job Titles</span>
               </h4>
-               
+              
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                 <input
                   type="text"
@@ -2055,7 +2133,7 @@ export default function App() {
                 <Users className="w-5 h-5 text-indigo-600" />
                 <span>Staff Roster & Access PINs</span>
               </h3>
-              <button 
+              <button 
                 onClick={() => setShowStaffManagementModal(false)}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
