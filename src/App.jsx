@@ -36,8 +36,7 @@ import {
   Filter
 } from 'lucide-react';
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Exact Firebase project configuration
 const firebaseConfig = {
   apiKey: "AIzaSyAvu_cavWQANh99-YdkE5jpFtGa3oD3qTw",
   authDomain: "shift-availability-8ba6e.firebaseapp.com",
@@ -48,26 +47,10 @@ const firebaseConfig = {
   measurementId: "G-6TN9QYYN83"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-let app, auth, db;
-try {
-  // Check if apiKey is dummy
-  if (firebaseConfig.apiKey && firebaseConfig.apiKey.includes("AIzaSyDummyKey")) {
-    throw new Error("Using dummy Firebase API key; switching to local state mode.");
-  }
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) {
-  console.warn("Firebase running in local fallback mode:", e.message);
-  app = null;
-  auth = null;
-  db = null;
-}
-
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'shift-manager-app';
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'shift-manager-app';
 
 // Helper function to generate upcoming dates (next 7 days starting today)
 const getUpcomingDates = () => {
