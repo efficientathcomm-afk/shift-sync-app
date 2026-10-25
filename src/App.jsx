@@ -1133,8 +1133,8 @@ export default function App() {
             <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Manager Control Center</span>
-                <h2 className="text-xl font-black text-slate-900 mt-0.5">Roster & Shift Allocation</h2>
-                <p className="text-xs text-slate-500 mt-1">Manage locations, departments, positions, staff profiles, and position-based shift scheduling.</p>
+                <h2 className="text-xl font-black text-slate-900 mt-0.5">Staff & Shift Management</h2>
+                <p className="text-xs text-slate-500 mt-1">Manage staff, positions and shifts and scheduling.</p>
               </div>
 
               {isManagerAuthenticated && (
@@ -1658,14 +1658,14 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL (LOCATIONS, DEPARTMENTS, POSITIONS) */}
+      {/* ORGANIZATIONAL SETUP MODAL (, DEPARTMENTS, POSITIONS) */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
                 <Building className="w-5 h-5 text-indigo-600" />
-                <span>Manage Locations, Departments & Positions</span>
+                <span>Manage Venues, Sports & Positions</span>
               </h3>
               <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -1676,7 +1676,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
-                <span>Locations</span>
+                <span>Venues</span>
               </h4>
               <div className="flex gap-2">
                 <input
@@ -1753,7 +1753,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Departments</span>
+                <span>Sports</span>
               </h4>
               <div className="flex gap-2">
                 <input
