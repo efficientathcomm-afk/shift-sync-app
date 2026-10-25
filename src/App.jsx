@@ -28,7 +28,13 @@ import {
   Check,
   Star,
   Printer,
-  TrendingUp
+  TrendingUp,
+  MapPin,
+  Briefcase,
+  Layers,
+  Settings,
+  Info,
+  User
 } from 'lucide-react';
 
 // Firebase Configuration
@@ -60,11 +66,29 @@ const getUpcomingDates = () => {
 
 const SAMPLE_DATES = getUpcomingDates();
 
+// Helper to format name as First Name, Last Initial (e.g. "Alex Rivera" -> "Alex R.")
+const formatShortName = (fullName) => {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0)}.`;
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('worker');
   const [workers, setWorkers] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [availabilities, setAvailabilities] = useState({});
+
+  // Organizational Management State (Locations, Departments, Positions)
+  const [locations, setLocations] = useState(['Main Branch', 'Downtown Hub', 'Uptown Express']);
+  const [departments, setDepartments] = useState(['Front of House', 'Kitchen / Back of House', 'Management']);
+  const [positions, setPositions] = useState([
+    { id: 'p_1', name: 'Head Barista', department: 'Front of House' },
+    { id: 'p_2', name: 'Barista', department: 'Front of House' },
+    { id: 'p_3', name: 'Shift Supervisor', department: 'Management' },
+    { id: 'p_4', name: 'Line Cook', department: 'Kitchen / Back of House' }
+  ]);
 
   // Worker authentication state
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
@@ -81,24 +105,40 @@ export default function App() {
   // Modals and UI state
   const [showMyScheduleModal, setShowMyScheduleModal] = useState(false);
   const [showStaffManagementModal, setShowStaffManagementModal] = useState(false);
+  const [showOrgStructureModal, setShowOrgStructureModal] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showArchivedShifts, setShowArchivedShifts] = useState(false);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [editingWorkerPinId, setEditingWorkerPinId] = useState(null);
   const [tempWorkerPin, setTempWorkerPin] = useState('');
   const [showPinsInDirectory, setShowPinsInDirectory] = useState(false);
 
+  // Shift Detail Modal state for workers
+  const [inspectingShift, setInspectingShift] = useState(null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState('ALL');
   const [showAddShiftModal, setShowAddShiftModal] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
 
+  // Profile being edited (either by manager or self)
+  const [editingProfile, setEditingProfile] = useState(null);
+
+  // New location/department/position form inputs
+  const [newLocName, setNewLocName] = useState('');
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newPosName, setNewPosName] = useState('');
+  const [newPosDept, setNewPosDept] = useState('');
+
   const [newWorker, setNewWorker] = useState({ name: '', role: 'Barista', email: '', phone: '', pin: '' });
+  
+  // Shift creation form state
   const [newShift, setNewShift] = useState({
     date: SAMPLE_DATES[0],
     timeSlot: 'Morning (08:00 AM - 04:00 PM)',
     location: 'Main Branch',
-    requiredCount: 2,
-    idealCount: 3
+    department: 'Front of House',
+    positionsList: [] // array of { positionId, positionName, required: boolean }
   });
 
   const [editingShift, setEditingShift] = useState(null);
@@ -108,11 +148,12 @@ export default function App() {
     window.print();
   };
 
-  // Load / sync collections with Firestore or state fallbacks
+  // Sync state with Firestore or fallbacks
   useEffect(() => {
     const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
     const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
     const availCol = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities');
+    const orgCol = collection(db, 'artifacts', appId, 'public', 'data', 'org_structure');
 
     const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(w => !w._deleted);
@@ -132,10 +173,19 @@ export default function App() {
       if (Object.keys(availObj).length > 0) setAvailabilities(availObj);
     }, () => {});
 
+    const unsubOrg = onSnapshot(orgCol, (snapshot) => {
+      snapshot.docs.forEach(doc => {
+        if (doc.id === 'locations' && doc.data().list) setLocations(doc.data().list);
+        if (doc.id === 'departments' && doc.data().list) setDepartments(doc.data().list);
+        if (doc.id === 'positions' && doc.data().list) setPositions(doc.data().list);
+      });
+    }, () => {});
+
     return () => {
       unsubWorkers();
       unsubShifts();
       unsubAvail();
+      unsubOrg();
     };
   }, []);
 
@@ -143,7 +193,7 @@ export default function App() {
     return workers.find(w => w.id === selectedWorkerId) || null;
   }, [workers, selectedWorkerId]);
 
-  // Keep selected worker ID updated if workers list changes
+  // Keep selected worker ID updated
   useEffect(() => {
     if (workers.length > 0 && (!selectedWorkerId || !workers.some(w => w.id === selectedWorkerId))) {
       setSelectedWorkerId(workers[0].id);
@@ -178,6 +228,56 @@ export default function App() {
     }
   };
 
+  // Profile Save Handler (Worker Self or Manager Editing)
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!editingProfile || !editingProfile.name.trim()) return;
+
+    setWorkers(prev => prev.map(w => w.id === editingProfile.id ? editingProfile : w));
+    setShowEditProfileModal(false);
+
+    try {
+      const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', editingProfile.id);
+      await setDoc(workerRef, editingProfile, { merge: true });
+    } catch (err) {}
+  };
+
+  // Org Structure Handlers
+  const handleAddLocation = async () => {
+    if (!newLocName.trim() || locations.includes(newLocName.trim())) return;
+    const updated = [...locations, newLocName.trim()];
+    setLocations(updated);
+    setNewLocName('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleAddDepartment = async () => {
+    if (!newDeptName.trim() || departments.includes(newDeptName.trim())) return;
+    const updated = [...departments, newDeptName.trim()];
+    setDepartments(updated);
+    setNewDeptName('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleAddPosition = async () => {
+    if (!newPosName.trim()) return;
+    const newPos = {
+      id: 'p_' + Date.now(),
+      name: newPosName.trim(),
+      department: newPosDept || departments[0] || 'General'
+    };
+    const updated = [...positions, newPos];
+    setPositions(updated);
+    setNewPosName('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+    } catch (e) {}
+  };
+
   const handleCreateWorker = async (e) => {
     e.preventDefault();
     if (!newWorker.name.trim()) return;
@@ -187,7 +287,7 @@ export default function App() {
     const createdWorker = {
       id: newId,
       name: newWorker.name.trim(),
-      role: newWorker.role.trim() || 'Team Member',
+      role: newWorker.role.trim() || positions[0]?.name || 'Team Member',
       email: newWorker.email.trim() || 'N/A',
       phone: newWorker.phone.trim() || 'N/A',
       pin: assignedPin
@@ -210,6 +310,7 @@ export default function App() {
 
     setShifts(prev => prev.map(s => ({
       ...s,
+      assignedPositions: (s.assignedPositions || []).filter(ap => ap.workerId !== workerId),
       assignedWorkerIds: s.assignedWorkerIds?.filter(id => id !== workerId) || []
     })));
 
@@ -257,17 +358,25 @@ export default function App() {
     } catch (err) {}
   };
 
+  // Create / Edit Shift submit
   const handleCreateShift = async (e) => {
     e.preventDefault();
     const newId = editingShift ? editingShift.id : 's_' + Date.now();
+    
+    // Automatically calculate required and target staff counts from positions selection
+    const reqCount = newShift.positionsList.filter(p => p.required).length;
+    const targCount = newShift.positionsList.length;
+
     const createdShift = {
       id: newId,
       date: newShift.date,
       timeSlot: newShift.timeSlot,
       location: newShift.location,
-      requiredCount: parseInt(newShift.requiredCount, 10) || 1,
-      idealCount: parseInt(newShift.idealCount, 10) || 2,
-      assignedWorkerIds: editingShift ? editingShift.assignedWorkerIds : []
+      department: newShift.department || departments[0] || 'General',
+      requiredCount: reqCount,
+      idealCount: targCount,
+      positionsList: newShift.positionsList,
+      assignedPositions: editingShift ? (editingShift.assignedPositions || []) : []
     };
 
     if (editingShift) {
@@ -281,9 +390,9 @@ export default function App() {
     setNewShift({
       date: SAMPLE_DATES[0],
       timeSlot: 'Morning (08:00 AM - 04:00 PM)',
-      location: 'Main Branch',
-      requiredCount: 2,
-      idealCount: 3
+      location: locations[0] || 'Main Branch',
+      department: departments[0] || 'Front of House',
+      positionsList: []
     });
 
     try {
@@ -292,15 +401,31 @@ export default function App() {
     } catch (err) {}
   };
 
-  const handleAssignWorkerToShift = async (shiftId, workerId) => {
+  // Manager assigns worker to specific position slot within a shift
+  const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
     let updatedShift;
     setShifts(prev => prev.map(s => {
       if (s.id === shiftId) {
-        const alreadyAssigned = s.assignedWorkerIds?.includes(workerId);
-        const updated = alreadyAssigned
-          ? s.assignedWorkerIds.filter(id => id !== workerId)
-          : [...(s.assignedWorkerIds || []), workerId];
-        updatedShift = { ...s, assignedWorkerIds: updated };
+        const currentAssigned = [...(s.assignedPositions || [])];
+        const existingIdx = currentAssigned.findIndex(ap => ap.slotIndex === slotIndex);
+
+        if (!workerId) {
+          // Unassigning
+          if (existingIdx !== -1) currentAssigned.splice(existingIdx, 1);
+        } else {
+          // If this worker is already assigned to another slot in this shift, clear that slot first
+          const otherIdx = currentAssigned.findIndex(ap => ap.workerId === workerId);
+          if (otherIdx !== -1) currentAssigned.splice(otherIdx, 1);
+
+          if (existingIdx !== -1) {
+            currentAssigned[existingIdx] = { slotIndex, workerId };
+          } else {
+            currentAssigned.push({ slotIndex, workerId });
+          }
+        }
+
+        const assignedWorkerIds = currentAssigned.map(ap => ap.workerId);
+        updatedShift = { ...s, assignedPositions: currentAssigned, assignedWorkerIds };
         return updatedShift;
       }
       return s;
@@ -330,9 +455,39 @@ export default function App() {
     ];
 
     const defaultShifts = [
-      { id: 's_1', date: SAMPLE_DATES[0], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Downtown Hub', requiredCount: 2, idealCount: 3, assignedWorkerIds: ['w_1'] },
-      { id: 's_2', date: SAMPLE_DATES[0], timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', location: 'Downtown Hub', requiredCount: 2, idealCount: 2, assignedWorkerIds: [] },
-      { id: 's_3', date: SAMPLE_DATES[1], timeSlot: 'Morning (07:00 AM - 03:00 PM)', location: 'Uptown Express', requiredCount: 1, idealCount: 2, assignedWorkerIds: ['w_2'] }
+      { 
+        id: 's_1', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
+        location: 'Downtown Hub', 
+        department: 'Front of House',
+        requiredCount: 2, 
+        idealCount: 3, 
+        positionsList: [
+          { positionId: 'p_1', positionName: 'Head Barista', required: true },
+          { positionId: 'p_2', positionName: 'Barista', required: true },
+          { positionId: 'p_2', positionName: 'Barista', required: false }
+        ],
+        assignedPositions: [
+          { slotIndex: 0, workerId: 'w_1' }
+        ],
+        assignedWorkerIds: ['w_1'] 
+      },
+      { 
+        id: 's_2', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
+        location: 'Downtown Hub', 
+        department: 'Kitchen / Back of House',
+        requiredCount: 2, 
+        idealCount: 2, 
+        positionsList: [
+          { positionId: 'p_4', positionName: 'Line Cook', required: true },
+          { positionId: 'p_4', positionName: 'Line Cook', required: true }
+        ],
+        assignedPositions: [],
+        assignedWorkerIds: [] 
+      }
     ];
 
     setWorkers(defaultWorkers);
@@ -371,7 +526,7 @@ export default function App() {
     let fullyStaffedCount = 0;
 
     shifts.forEach(s => {
-      const assigned = s.assignedWorkerIds?.length || 0;
+      const assigned = s.assignedPositions ? s.assignedPositions.length : (s.assignedWorkerIds?.length || 0);
       const required = s.requiredCount || 1;
       const target = s.idealCount || required;
 
@@ -400,6 +555,31 @@ export default function App() {
     };
   }, [shifts]);
 
+  // Helper to toggle position in shift creation
+  const togglePositionInShiftNew = (pos) => {
+    setNewShift(prev => {
+      const existing = [...prev.positionsList];
+      existing.push({ positionId: pos.id, positionName: pos.name, required: true });
+      return { ...prev, positionsList: existing };
+    });
+  };
+
+  const removePositionFromShiftNew = (index) => {
+    setNewShift(prev => {
+      const existing = [...prev.positionsList];
+      existing.splice(index, 1);
+      return { ...prev, positionsList: existing };
+    });
+  };
+
+  const toggleRequiredPositionNew = (index) => {
+    setNewShift(prev => {
+      const existing = [...prev.positionsList];
+      existing[index] = { ...existing[index], required: !existing[index].required };
+      return { ...prev, positionsList: existing };
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased pb-12 print:bg-white print:pb-0">
       {/* HEADER NAVBAR */}
@@ -413,7 +593,7 @@ export default function App() {
               <h1 className="text-lg font-black tracking-tight flex items-center gap-2">
                 ShiftSync <span className="text-[10px] uppercase tracking-wider bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded-full font-bold">Pro</span>
               </h1>
-              <p className="text-[11px] text-slate-400 font-medium">Smart Staff Scheduling & Availability</p>
+              <p className="text-[11px] text-slate-400 font-medium">Smart Staff Scheduling & Position Availability</p>
             </div>
           </div>
 
@@ -455,7 +635,7 @@ export default function App() {
             <div>
               <h2 className="text-sm font-black text-white tracking-wide">Upcoming Shift Coverage Status</h2>
               <p className="text-xs text-slate-400 font-medium mt-0.5">
-                {scheduleHealthSummary.totalShifts} Upcoming Shifts • Mark preferred or available to help managers fill open slots!
+                {scheduleHealthSummary.totalShifts} Upcoming Shifts • Click any shift card to view position breakdowns!
               </p>
             </div>
           </div>
@@ -497,7 +677,7 @@ export default function App() {
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Worker Portal</span>
                 <h2 className="text-xl font-black text-slate-900 mt-0.5">Submit Availability</h2>
-                <p className="text-xs text-slate-500 mt-1">Select your user profile, enter your PIN, and mark preferences for upcoming open shifts.</p>
+                <p className="text-xs text-slate-500 mt-1">Select your user profile, enter PIN, submit shift preferences, and manage your profile details.</p>
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -520,6 +700,20 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {isWorkerAuthenticated && currentWorker && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProfile({ ...currentWorker });
+                      setShowEditProfileModal(true);
+                    }}
+                    className="inline-flex items-center justify-center space-x-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-3 rounded-xl transition border border-slate-300"
+                  >
+                    <Edit3 className="w-4 h-4 text-indigo-600" />
+                    <span>Edit Profile</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -618,13 +812,25 @@ export default function App() {
                     <UserCheck className="w-4 h-4 text-emerald-600" />
                     <span>Unlocked as: <strong>{currentWorker.name}</strong> ({currentWorker.role})</span>
                   </div>
-                  <button
-                    onClick={() => setIsWorkerAuthenticated(false)}
-                    className="text-xs font-semibold text-emerald-700 hover:underline flex items-center space-x-1"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Lock Profile</span>
-                  </button>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => {
+                        setEditingProfile({ ...currentWorker });
+                        setShowEditProfileModal(true);
+                      }}
+                      className="text-xs font-semibold text-indigo-700 hover:underline flex items-center space-x-1"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Edit My Info</span>
+                    </button>
+                    <button
+                      onClick={() => setIsWorkerAuthenticated(false)}
+                      className="text-xs font-semibold text-emerald-700 hover:underline flex items-center space-x-1"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Lock Profile</span>
+                    </button>
+                  </div>
                 </div>
 
                 {filteredShifts.length === 0 ? (
@@ -637,19 +843,23 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
-                      const isAssigned = shift.assignedWorkerIds?.includes(currentWorker.id);
-                      const assignedWorkers = workers.filter(w => shift.assignedWorkerIds?.includes(w.id));
-                      const assignedCount = assignedWorkers.length;
+                      
+                      // Check if worker is assigned in any position for this shift
+                      const assignedSlots = shift.assignedPositions || [];
+                      const isAssigned = assignedSlots.some(ap => ap.workerId === currentWorker.id);
+                      
+                      const assignedCount = assignedSlots.length;
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
 
                       return (
                         <div 
                           key={shift.id} 
-                          className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all ${
+                          onClick={() => setInspectingShift(shift)}
+                          className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md ${
                             isAssigned 
                               ? 'border-indigo-400 ring-2 ring-indigo-200' 
-                              : 'border-slate-200 hover:border-slate-300'
+                              : 'border-slate-200 hover:border-indigo-300'
                           }`}
                         >
                           <div className="space-y-3">
@@ -660,7 +870,7 @@ export default function App() {
                               {isAssigned && (
                                 <span className="text-[11px] font-extrabold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full flex items-center space-x-1">
                                   <CheckCircle className="w-3 h-3" />
-                                  <span>You are Assigned!</span>
+                                  <span>Assigned</span>
                                 </span>
                               )}
                             </div>
@@ -670,26 +880,33 @@ export default function App() {
                                 <Clock className="w-4 h-4 text-indigo-600" />
                                 <span>{shift.timeSlot}</span>
                               </h4>
-                              <p className="text-xs text-slate-500 mt-1 flex items-center space-x-1">
-                                <Building className="w-3.5 h-3.5 text-slate-400" />
-                                <span>{shift.location}</span>
-                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span className="flex items-center space-x-1">
+                                  <Building className="w-3.5 h-3.5 text-slate-400" />
+                                  <span>{shift.location}</span>
+                                </span>
+                                {shift.department && (
+                                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-semibold text-[10px]">
+                                    {shift.department}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            {/* STAFFING PROGRESS BAR FOR WORKERS */}
+                            {/* SUMMARY PROGRESS BAR */}
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                               <div className="flex justify-between items-center text-[11px]">
                                 {assignedCount < requiredCount ? (
                                   <span className="font-extrabold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                                    Needs {requiredCount - assignedCount} More Worker{requiredCount - assignedCount > 1 ? 's' : ''}!
+                                    Needs {requiredCount - assignedCount} Staff
                                   </span>
                                 ) : assignedCount < targetCount ? (
                                   <span className="font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                    Min Met ({targetCount - assignedCount} to Target)
+                                    Min Met ({targetCount - assignedCount} Open)
                                   </span>
                                 ) : (
                                   <span className="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                    Fully Staffed (Target Reached)
+                                    Fully Staffed
                                   </span>
                                 )}
                                 <span className="font-extrabold text-slate-700">
@@ -705,44 +922,27 @@ export default function App() {
                                         ? 'bg-amber-400' 
                                         : 'bg-emerald-500'
                                   }`}
-                                  style={{ width: `${Math.min(100, (assignedCount / targetCount) * 100)}%` }}
+                                  style={{ width: `${Math.min(100, (assignedCount / Math.max(1, targetCount)) * 100)}%` }}
                                 ></div>
                               </div>
                             </div>
 
-                            {/* STAFF ALREADY ASSIGNED TO SHIFT */}
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                Assigned Staff ({assignedWorkers.length}):
-                              </span>
-                              {assignedWorkers.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic">No staff assigned yet</p>
-                              ) : (
-                                <div className="flex flex-wrap gap-1">
-                                  {assignedWorkers.map(w => (
-                                    <span 
-                                      key={w.id} 
-                                      className={`text-[11px] font-medium px-2 py-0.5 rounded-md ${
-                                        w.id === currentWorker.id 
-                                          ? 'bg-indigo-600 text-white font-bold' 
-                                          : 'bg-slate-100 text-slate-700'
-                                      }`}
-                                    >
-                                      {w.name}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            <p className="text-[11px] text-indigo-600 font-bold flex items-center justify-end space-x-1 pt-1">
+                              <span>Click for Position Breakdown</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </p>
                           </div>
 
-                          {/* PREFERRED OPTION WITH AVAILABLE/UNAVAILABLE */}
-                          <div className="pt-4 border-t border-slate-100 mt-4 space-y-2">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
+                          {/* WORKER AVAILABILITY SELECTOR */}
+                          <div 
+                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
                             <div className="grid grid-cols-3 gap-1.5">
                               <button
                                 onClick={() => handleAvailabilityToggle(shift.id, 'available')}
-                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
                                   workerStatus === 'available'
                                     ? 'bg-emerald-600 text-white border-emerald-600'
                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -753,7 +953,7 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => handleAvailabilityToggle(shift.id, 'preferred')}
-                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
                                   workerStatus === 'preferred'
                                     ? 'bg-amber-500 text-white border-amber-500'
                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -764,7 +964,7 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => handleAvailabilityToggle(shift.id, 'unavailable')}
-                                className={`py-2 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
                                   workerStatus === 'unavailable'
                                     ? 'bg-rose-600 text-white border-rose-600'
                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -792,7 +992,7 @@ export default function App() {
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Manager Control Center</span>
                 <h2 className="text-xl font-black text-slate-900 mt-0.5">Roster & Shift Allocation</h2>
-                <p className="text-xs text-slate-500 mt-1">Manage team members, create shifts, and review availability submissions.</p>
+                <p className="text-xs text-slate-500 mt-1">Manage locations, departments, positions, staff profiles, and position-based shift scheduling.</p>
               </div>
 
               {isManagerAuthenticated && (
@@ -804,6 +1004,13 @@ export default function App() {
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Seed Sample Data</span>
+                  </button>
+                  <button
+                    onClick={() => setShowOrgStructureModal(true)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center space-x-1.5 border border-slate-300"
+                  >
+                    <Settings className="w-4 h-4 text-indigo-600" />
+                    <span>Org Setup (Depts & Positions)</span>
                   </button>
                   <button
                     onClick={() => setShowStaffManagementModal(true)}
@@ -818,9 +1025,9 @@ export default function App() {
                       setNewShift({
                         date: SAMPLE_DATES[0],
                         timeSlot: 'Morning (08:00 AM - 04:00 PM)',
-                        location: 'Main Branch',
-                        requiredCount: 2,
-                        idealCount: 3
+                        location: locations[0] || 'Main Branch',
+                        department: departments[0] || 'Front of House',
+                        positionsList: []
                       });
                       setShowAddShiftModal(true);
                     }}
@@ -871,7 +1078,7 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* MANAGER STATS SUMMARY WITH TARGET EMPLOYEES */}
+                {/* MANAGER STATS SUMMARY */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                     <span className="text-[11px] font-bold text-slate-400 uppercase">Active Shifts</span>
@@ -932,22 +1139,22 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* SHIFTS LIST FOR MANAGERS */}
+                {/* SHIFTS LIST FOR MANAGERS WITH POSITION ASSIGNMENTS */}
                 {filteredShifts.length === 0 ? (
                   <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
                     <Calendar className="w-10 h-10 mx-auto text-slate-300" />
                     <h3 className="text-base font-bold text-slate-700">No shifts scheduled</h3>
                     <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                      Click "Add New Shift" or "Seed Sample Data" to configure shifts for team assignments.
+                      Click "Add New Shift" or "Seed Sample Data" to configure shifts for position assignments.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {filteredShifts.map(shift => {
-                      const assignedCount = shift.assignedWorkerIds?.length || 0;
-                      const requiredCount = shift.requiredCount || 1;
+                      const assignedPositions = shift.assignedPositions || [];
+                      const assignedCount = assignedPositions.length;
+                      const requiredCount = shift.requiredCount || 0;
                       const targetCount = shift.idealCount || requiredCount;
-                      const isFullyStaffed = assignedCount >= requiredCount;
 
                       return (
                         <div key={shift.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
@@ -960,7 +1167,7 @@ export default function App() {
                                 <Clock className="w-4 h-4 text-slate-400" />
                                 <span>{shift.timeSlot}</span>
                               </h3>
-                              <span className="text-xs text-slate-500">({shift.location})</span>
+                              <span className="text-xs text-slate-500">({shift.location} • {shift.department || 'General'})</span>
                             </div>
 
                             <div className="flex items-center space-x-3">
@@ -971,7 +1178,7 @@ export default function App() {
                                     ? 'bg-amber-100 text-amber-800 border-amber-300'
                                     : 'bg-rose-100 text-rose-800 border-rose-300'
                               }`}>
-                                {assignedCount} / {requiredCount} Min ({targetCount} Target)
+                                {assignedCount} / {requiredCount} Required ({targetCount} Target)
                               </span>
                               <button
                                 onClick={() => {
@@ -980,8 +1187,8 @@ export default function App() {
                                     date: shift.date,
                                     timeSlot: shift.timeSlot,
                                     location: shift.location,
-                                    requiredCount: shift.requiredCount,
-                                    idealCount: shift.idealCount || shift.requiredCount
+                                    department: shift.department || departments[0],
+                                    positionsList: shift.positionsList || []
                                   });
                                   setShowAddShiftModal(true);
                                 }}
@@ -1000,55 +1207,71 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* ASSIGN WORKERS LIST WITH PREFERRED BADGES */}
+                          {/* POSITION-BASED ASSIGNMENT GRID FOR MANAGERS */}
                           <div>
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
-                              Assign Staff Members
+                              Position Slots & Worker Scheduling
                             </span>
 
-                            {workers.length === 0 ? (
-                              <p className="text-xs text-slate-400 italic">No staff members in roster to assign.</p>
+                            {(!shift.positionsList || shift.positionsList.length === 0) ? (
+                              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                No specific positions configured for this shift. Click the edit icon above to add required positions.
+                              </p>
                             ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                {workers.map(w => {
-                                  const isAssigned = shift.assignedWorkerIds?.includes(w.id);
-                                  const workerPref = availabilities[w.id]?.[shift.id];
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {shift.positionsList.map((posSlot, idx) => {
+                                  const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
+                                  const assignedWorker = workers.find(w => w.id === assignment?.workerId);
 
                                   return (
-                                    <button
-                                      key={w.id}
-                                      onClick={() => handleAssignWorkerToShift(shift.id, w.id)}
-                                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition ${
-                                        isAssigned 
-                                          ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200' 
-                                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                    <div 
+                                      key={idx} 
+                                      className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${
+                                        assignedWorker
+                                          ? 'bg-slate-50 border-slate-300'
+                                          : posSlot.required
+                                            ? 'bg-rose-50/60 border-rose-200'
+                                            : 'bg-amber-50/60 border-amber-200'
                                       }`}
                                     >
-                                      <div>
-                                        <p className="text-xs font-bold text-slate-800">{w.name}</p>
-                                        <p className="text-[10px] text-slate-500">{w.role}</p>
-                                      </div>
-
-                                      <div className="flex items-center space-x-1.5">
-                                        {workerPref === 'preferred' && (
-                                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded" title="Preferred Shift">
-                                            <Star className="w-2.5 h-2.5 fill-current" />
-                                            <span>Pref</span>
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-1.5">
+                                          <Briefcase className="w-3.5 h-3.5 text-slate-500" />
+                                          <span className="text-xs font-bold text-slate-800">{posSlot.positionName}</span>
+                                        </div>
+                                        {posSlot.required ? (
+                                          <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                                            Required Slot
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                                            Optional Slot
                                           </span>
                                         )}
-                                        {workerPref === 'available' && (
-                                          <span className="w-2 h-2 rounded-full bg-emerald-500" title="Available"></span>
-                                        )}
-                                        {workerPref === 'unavailable' && (
-                                          <span className="w-2 h-2 rounded-full bg-rose-500" title="Unavailable"></span>
-                                        )}
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
-                                          isAssigned ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                                        }`}>
-                                          {isAssigned ? 'Assigned' : 'Assign'}
-                                        </span>
                                       </div>
-                                    </button>
+
+                                      <div className="flex items-center gap-2">
+                                        <select
+                                          value={assignment?.workerId || ''}
+                                          onChange={(e) => handleAssignWorkerToPosition(shift.id, idx, e.target.value)}
+                                          className="text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium w-full focus:ring-2 focus:ring-indigo-500"
+                                        >
+                                          <option value="">-- Unassigned (Open) --</option>
+                                          {workers.map(w => {
+                                            const pref = availabilities[w.id]?.[shift.id];
+                                            let badge = '';
+                                            if (pref === 'preferred') badge = ' ⭐ (Preferred)';
+                                            if (pref === 'available') badge = ' ✓ (Available)';
+                                            if (pref === 'unavailable') badge = ' ✕ (Unavailable)';
+                                            return (
+                                              <option key={w.id} value={w.id}>
+                                                {w.name} ({w.role}){badge}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      </div>
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -1064,6 +1287,309 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* INSPECT SHIFT POPUP MODAL (WORKER & MANAGER DETAIL VIEW) */}
+      {inspectingShift && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md">
+                  {inspectingShift.date}
+                </span>
+                <h3 className="text-lg font-black text-slate-900 mt-1">{inspectingShift.timeSlot}</h3>
+                <p className="text-xs text-slate-500">
+                  {inspectingShift.location} {inspectingShift.department ? `• ${inspectingShift.department}` : ''}
+                </p>
+              </div>
+              <button onClick={() => setInspectingShift(null)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+                Position Breakdowns & Staffing Status
+              </h4>
+
+              {(!inspectingShift.positionsList || inspectingShift.positionsList.length === 0) ? (
+                <p className="text-xs text-slate-400 italic text-center py-6">No individual position breakdown configured for this shift.</p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {inspectingShift.positionsList.map((pos, idx) => {
+                    const assigned = (inspectingShift.assignedPositions || []).find(ap => ap.slotIndex === idx);
+                    const workerObj = workers.find(w => w.id === assigned?.workerId);
+
+                    return (
+                      <div key={idx} className="p-3 rounded-xl border flex items-center justify-between bg-slate-50 border-slate-200">
+                        <div className="flex items-center space-x-2">
+                          <Briefcase className="w-4 h-4 text-slate-500" />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">{pos.positionName}</span>
+                            <span className="text-[10px] text-slate-500">{pos.required ? 'Required Position' : 'Target / Optional'}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          {workerObj ? (
+                            <span className="text-xs font-black text-slate-900 bg-white border border-slate-300 px-3 py-1 rounded-lg shadow-sm">
+                              {formatShortName(workerObj.name)}
+                            </span>
+                          ) : pos.required ? (
+                            <span className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg flex items-center space-x-1">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              <span>Required Open</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                              Open Position
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setInspectingShift(null)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
+              >
+                Close Breakdown
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT WORKER PROFILE MODAL (FOR BOTH MANAGERS & INDIVIDUAL WORKERS) */}
+      {showEditProfileModal && editingProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <User className="w-5 h-5 text-indigo-600" />
+                <span>Edit Worker Profile</span>
+              </h3>
+              <button onClick={() => setShowEditProfileModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingProfile.name}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Role / Primary Position</label>
+                <select
+                  value={editingProfile.role}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, role: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  {positions.map(p => (
+                    <option key={p.id} value={p.name}>{p.name} ({p.department})</option>
+                  ))}
+                  {!positions.some(p => p.name === editingProfile.role) && (
+                    <option value={editingProfile.role}>{editingProfile.role}</option>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editingProfile.email}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, email: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  value={editingProfile.phone}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, phone: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Security PIN</label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={editingProfile.pin}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, pin: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProfileModal(false)}
+                  className="bg-slate-100 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ORGANIZATIONAL SETUP MODAL (LOCATIONS, DEPARTMENTS, POSITIONS) */}
+      {showOrgStructureModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <Building className="w-5 h-5 text-indigo-600" />
+                <span>Manage Locations, Departments & Positions</span>
+              </h3>
+              <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* LOCATIONS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <MapPin className="w-4 h-4 text-indigo-600" />
+                <span>Locations</span>
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New location name..."
+                  value={newLocName}
+                  onChange={(e) => setNewLocName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLocation}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {locations.map((loc, i) => (
+                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
+                    {loc}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* DEPARTMENTS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                <span>Departments</span>
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New department name..."
+                  value={newDeptName}
+                  onChange={(e) => setNewDeptName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddDepartment}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {departments.map((dept, i) => (
+                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
+                    {dept}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* POSITIONS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <Briefcase className="w-4 h-4 text-indigo-600" />
+                <span>Positions / Job Titles</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Position title..."
+                  value={newPosName}
+                  onChange={(e) => setNewPosName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                />
+                <select
+                  value={newPosDept}
+                  onChange={(e) => setNewPosDept(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                >
+                  {departments.map((d, i) => (
+                    <option key={i} value={d}>{d}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddPosition}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg col-span-1"
+                >
+                  Add Position
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                {positions.map((pos) => (
+                  <div key={pos.id} className="p-2 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">{pos.name}</span>
+                      <span className="text-[10px] text-slate-500">{pos.department}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowOrgStructureModal(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* STAFF MANAGEMENT MODAL */}
       {showStaffManagementModal && (
@@ -1125,6 +1651,18 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProfile({ ...w });
+                          setShowEditProfileModal(true);
+                        }}
+                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                        title="Edit Full Profile"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+
                       {editingWorkerPinId === w.id ? (
                         <div className="flex items-center space-x-1">
                           <input
@@ -1213,15 +1751,16 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Role / Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Barista"
+                <label className="block text-xs font-bold text-slate-700 mb-1">Primary Position / Role</label>
+                <select
                   value={newWorker.role}
                   onChange={(e) => setNewWorker({ ...newWorker, role: e.target.value })}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
+                >
+                  {positions.map(p => (
+                    <option key={p.id} value={p.name}>{p.name} ({p.department})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -1278,10 +1817,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD / EDIT SHIFT MODAL WITH TARGET EMPLOYEES COUNT */}
+      {/* ADD / EDIT SHIFT MODAL WITH POSITION BREAKDOWN */}
       {showAddShiftModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">
                 {editingShift ? 'Edit Shift Slot' : 'Create Shift Slot'}
@@ -1291,64 +1830,128 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateShift} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date</label>
-                <input
-                  type="date"
-                  required
-                  value={newShift.date}
-                  onChange={(e) => setNewShift({ ...newShift, date: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Time Slot</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Morning (08:00 AM - 04:00 PM)"
-                  value={newShift.timeSlot}
-                  onChange={(e) => setNewShift({ ...newShift, timeSlot: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Location / Branch</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Main Branch"
-                  value={newShift.location}
-                  onChange={(e) => setNewShift({ ...newShift, location: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
-              </div>
-
+            <form onSubmit={handleCreateShift} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Required Count</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date</label>
                   <input
-                    type="number"
-                    min={1}
+                    type="date"
                     required
-                    value={newShift.requiredCount}
-                    onChange={(e) => setNewShift({ ...newShift, requiredCount: e.target.value })}
+                    value={newShift.date}
+                    onChange={(e) => setNewShift({ ...newShift, date: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Target / Ideal Count</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Time Slot</label>
                   <input
-                    type="number"
-                    min={1}
+                    type="text"
                     required
-                    value={newShift.idealCount}
-                    onChange={(e) => setNewShift({ ...newShift, idealCount: e.target.value })}
+                    placeholder="e.g. Morning (08:00 AM - 04:00 PM)"
+                    value={newShift.timeSlot}
+                    onChange={(e) => setNewShift({ ...newShift, timeSlot: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Location</label>
+                  <select
+                    value={newShift.location}
+                    onChange={(e) => setNewShift({ ...newShift, location: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  >
+                    {locations.map((loc, i) => (
+                      <option key={i} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
+                  <select
+                    value={newShift.department}
+                    onChange={(e) => setNewShift({ ...newShift, department: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  >
+                    {departments.map((dept, i) => (
+                      <option key={i} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* POSITIONS CONFIGURATION AREA */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-extrabold text-slate-800">Available Positions on Shift</label>
+                    <p className="text-[11px] text-slate-500">Click to add positions. Check the box to make a position Required.</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-indigo-600 block">
+                      Required: {newShift.positionsList.filter(p => p.required).length} • Target: {newShift.positionsList.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* SELECT POSITION TO ADD */}
+                <div className="flex gap-2">
+                  <select
+                    id="addPositionSelect"
+                    className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                  >
+                    {positions.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.department})</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sel = document.getElementById('addPositionSelect');
+                      const posObj = positions.find(p => p.id === sel.value) || positions[0];
+                      if (posObj) togglePositionInShiftNew(posObj);
+                    }}
+                    className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                  >
+                    + Add Slot
+                  </button>
+                </div>
+
+                {/* ADDED POSITIONS LIST */}
+                <div className="space-y-1.5 pt-1">
+                  {newShift.positionsList.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-2">No position slots added yet.</p>
+                  ) : (
+                    newShift.positionsList.map((pos, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
+                        <div className="flex items-center space-x-2">
+                          <label className="inline-flex items-center space-x-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={pos.required}
+                              onChange={() => toggleRequiredPositionNew(idx)}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-xs font-bold text-slate-800">{pos.positionName}</span>
+                          </label>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            pos.required ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {pos.required ? 'Required' : 'Target / Optional'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePositionFromShiftNew(idx)}
+                          className="text-slate-400 hover:text-rose-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -1387,23 +1990,29 @@ export default function App() {
             </div>
 
             <div className="space-y-3 max-h-80 overflow-y-auto print:max-h-none print:overflow-visible">
-              {shifts.filter(s => s.assignedWorkerIds?.includes(currentWorker.id)).length === 0 ? (
+              {shifts.filter(s => (s.assignedPositions || []).some(ap => ap.workerId === currentWorker.id) || s.assignedWorkerIds?.includes(currentWorker.id)).length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">You are not currently assigned to any scheduled shifts.</p>
               ) : (
                 shifts
-                  .filter(s => s.assignedWorkerIds?.includes(currentWorker.id))
-                  .map(s => (
-                    <div key={s.id} className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
-                      <div>
-                        <span className="text-[11px] font-bold text-indigo-700">{s.date}</span>
-                        <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
-                        <p className="text-[11px] text-slate-500">{s.location}</p>
+                  .filter(s => (s.assignedPositions || []).some(ap => ap.workerId === currentWorker.id) || s.assignedWorkerIds?.includes(currentWorker.id))
+                  .map(s => {
+                    const myAssignment = (s.assignedPositions || []).find(ap => ap.workerId === currentWorker.id);
+                    return (
+                      <div key={s.id} className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] font-bold text-indigo-700">{s.date}</span>
+                          <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
+                          <p className="text-[11px] text-slate-500">
+                            {s.location} {s.department ? `• ${s.department}` : ''}
+                            {myAssignment && ` • Position: ${s.positionsList?.[myAssignment.slotIndex]?.positionName || currentWorker.role}`}
+                          </p>
+                        </div>
+                        <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2.5 py-1 rounded-full">
+                          Confirmed
+                        </span>
                       </div>
-                      <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2.5 py-1 rounded-full">
-                        Confirmed
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
               )}
             </div>
 
