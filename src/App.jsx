@@ -203,29 +203,30 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Sync state with Firestore collections with localStorage fallback for external deployments like Vercel
+  // Load from localStorage on mount as instant primary state or fallback
   useEffect(() => {
-    if (!db) {
-      // Load from localStorage if offline/external
-      try {
-        const localWorkers = localStorage.getItem('shiftsync_workers');
-        const localShifts = localStorage.getItem('shiftsync_shifts');
-        const localAvail = localStorage.getItem('shiftsync_avail');
-        const localLocs = localStorage.getItem('shiftsync_locs');
-        const localDepts = localStorage.getItem('shiftsync_depts');
-        const localPoss = localStorage.getItem('shiftsync_poss');
+    try {
+      const localWorkers = localStorage.getItem('shiftsync_workers');
+      const localShifts = localStorage.getItem('shiftsync_shifts');
+      const localAvail = localStorage.getItem('shiftsync_avail');
+      const localLocs = localStorage.getItem('shiftsync_locs');
+      const localDepts = localStorage.getItem('shiftsync_depts');
+      const localPoss = localStorage.getItem('shiftsync_poss');
 
-        if (localWorkers) setWorkers(JSON.parse(localWorkers));
-        if (localShifts) setShifts(JSON.parse(localShifts));
-        if (localAvail) setAvailabilities(JSON.parse(localAvail));
-        if (localLocs) setLocations(JSON.parse(localLocs));
-        if (localDepts) setDepartments(JSON.parse(localDepts));
-        if (localPoss) setPositions(JSON.parse(localPoss));
-      } catch (e) {
-        console.error("Local storage load error:", e);
-      }
-      return;
+      if (localWorkers) setWorkers(JSON.parse(localWorkers));
+      if (localShifts) setShifts(JSON.parse(localShifts));
+      if (localAvail) setAvailabilities(JSON.parse(localAvail));
+      if (localLocs) setLocations(JSON.parse(localLocs));
+      if (localDepts) setDepartments(JSON.parse(localDepts));
+      if (localPoss) setPositions(JSON.parse(localPoss));
+    } catch (e) {
+      console.error("Local storage load error:", e);
     }
+  }, []);
+
+  // Sync state with Firestore collections with localStorage fallback
+  useEffect(() => {
+    if (!db) return;
 
     const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
     const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
@@ -323,19 +324,15 @@ export default function App() {
     }
   };
 
-  // Helper saver for DB + LocalStorage fallback
-  const saveDataToCloudOrLocal = async (collectionPath, docId, dataPayload, localKey, updatedState) => {
-    // Always update React state & localStorage immediately for instant UI response
-    if (updatedState !== undefined) updatedState();
+  // Universal helper saver for DB + LocalStorage fallback
+  const persistWorkerUpdate = async (updatedList) => {
+    setWorkers(updatedList);
+    localStorage.setItem('shiftsync_workers', JSON.stringify(updatedList));
+  };
 
-    try {
-      if (db) {
-        const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionPath, docId);
-        await setDoc(ref, dataPayload, { merge: true });
-      }
-    } catch (err) {
-      console.warn("Cloud write fallback error:", err);
-    }
+  const persistShiftUpdate = async (updatedList) => {
+    setShifts(updatedList);
+    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedList));
   };
 
   // Profile Save Handler (Worker Self or Manager Editing)
@@ -344,8 +341,7 @@ export default function App() {
     if (!editingProfile || !editingProfile.name.trim()) return;
 
     const updatedWorkers = workers.map(w => w.id === editingProfile.id ? editingProfile : w);
-    setWorkers(updatedWorkers);
-    localStorage.setItem('shiftsync_workers', JSON.stringify(updatedWorkers));
+    await persistWorkerUpdate(updatedWorkers);
     setShowEditProfileModal(false);
 
     try {
@@ -354,7 +350,7 @@ export default function App() {
         await setDoc(workerRef, editingProfile, { merge: true });
       }
     } catch (err) {
-      console.warn("Save profile cloud error:", err);
+      console.warn("Save profile cloud error (handled locally):", err);
     }
   };
 
@@ -509,7 +505,7 @@ export default function App() {
     };
 
     const updated = [...workers, createdWorker];
-    setWorkers(updated);
+    await persistWorkerUpdate(updated);
     setSelectedWorkerId(newId);
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
@@ -524,7 +520,6 @@ export default function App() {
       allowedPosition: ''
     });
 
-    localStorage.setItem('shiftsync_workers', JSON.stringify(updated));
     try {
       if (db) {
         const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
@@ -535,16 +530,14 @@ export default function App() {
 
   const handleDeleteWorker = async (workerId) => {
     const updatedWorkers = workers.filter(w => w.id !== workerId);
-    setWorkers(updatedWorkers);
-    localStorage.setItem('shiftsync_workers', JSON.stringify(updatedWorkers));
+    await persistWorkerUpdate(updatedWorkers);
 
     const updatedShifts = shifts.map(s => ({
       ...s,
       assignedPositions: (s.assignedPositions || []).filter(ap => ap.workerId !== workerId),
       assignedWorkerIds: s.assignedWorkerIds?.filter(id => id !== workerId) || []
     }));
-    setShifts(updatedShifts);
-    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
+    await persistShiftUpdate(updatedShifts);
 
     if (selectedWorkerId === workerId) {
       setIsWorkerAuthenticated(false);
@@ -562,9 +555,8 @@ export default function App() {
   const handleUpdateWorkerPin = async (workerId, newPin) => {
     if (!newPin.trim()) return;
     const updated = workers.map(w => w.id === workerId ? { ...w, pin: newPin.trim() } : w);
-    setWorkers(updated);
+    await persistWorkerUpdate(updated);
     setEditingWorkerPinId(null);
-    localStorage.setItem('shiftsync_workers', JSON.stringify(updated));
 
     try {
       if (db) {
@@ -629,8 +621,7 @@ export default function App() {
       updatedShifts = [...shifts, createdShift];
     }
 
-    setShifts(updatedShifts);
-    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
+    await persistShiftUpdate(updatedShifts);
 
     setShowAddShiftModal(false);
     setNewShift({
@@ -677,8 +668,7 @@ export default function App() {
       return s;
     });
 
-    setShifts(updatedShifts);
-    localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedShifts));
+    await persistShiftUpdate(updatedShifts);
 
     if (updatedShift) {
       try {
@@ -692,8 +682,7 @@ export default function App() {
 
   const handleDeleteShift = async (shiftId) => {
     const updated = shifts.filter(s => s.id !== shiftId);
-    setShifts(updated);
-    localStorage.setItem('shiftsync_shifts', JSON.stringify(updated));
+    await persistShiftUpdate(updated);
 
     try {
       if (db) {
@@ -703,7 +692,7 @@ export default function App() {
     } catch (err) { console.warn(err); }
   };
 
-  const handleSeedDemoData = () => {
+  const handleSeedDemoData = async () => {
     const defaultWorkers = [
       { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocation: 'Downtown Hub', allowedDepartment: '', allowedPosition: '' },
       { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocation: '', allowedDepartment: 'Management', allowedPosition: '' },
@@ -746,12 +735,9 @@ export default function App() {
       }
     ];
 
-    setWorkers(defaultWorkers);
-    setShifts(defaultShifts);
+    await persistWorkerUpdate(defaultWorkers);
+    await persistShiftUpdate(defaultShifts);
     setSelectedWorkerId(defaultWorkers[0].id);
-
-    localStorage.setItem('shiftsync_workers', JSON.stringify(defaultWorkers));
-    localStorage.setItem('shiftsync_shifts', JSON.stringify(defaultShifts));
   };
 
   // Filter workers based on search modal input
