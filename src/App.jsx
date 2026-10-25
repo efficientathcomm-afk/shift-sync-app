@@ -1190,7 +1190,7 @@ export default function App() {
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Manager Security Gate</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Enter Manager Security PIN (Default: <strong className="text-indigo-600 font-mono">9999</strong>) to access shift configuration.
+                    Enter Manager PIN to access Manager Portal.
                   </p>
                 </div>
 
@@ -1205,7 +1205,7 @@ export default function App() {
                   />
 
                   {managerPinError && (
-                    <p className="text-xs text-rose-600 font-semibold">Invalid Manager PIN. Try 9999.</p>
+                    <p className="text-xs text-rose-600 font-semibold">Invalid Manager PIN.</p>
                   )}
 
                   <div className="pt-2">
