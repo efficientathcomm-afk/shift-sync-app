@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { 
   Users, 
@@ -39,20 +39,22 @@ import {
   Filter
 } from 'lucide-react';
 
-// Firebase Configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyDummyKeyForShiftSyncDemoApp",
-  authDomain: "shiftsync-app.firebaseapp.com",
-  projectId: "shiftsync-app",
-  storageBucket: "shiftsync-app.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef123456"
-};
+// Firebase Configuration & Initialization
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyDummyKeyForShiftSyncDemoApp",
+      authDomain: "shiftsync-app.firebaseapp.com",
+      projectId: "shiftsync-app",
+      storageBucket: "shiftsync-app.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef123456"
+    };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'shift-manager-app';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'shift-manager-app';
 
 // Helper function to generate upcoming dates (next 7 days starting today)
 const getUpcomingDates = () => {
@@ -77,6 +79,7 @@ const formatShortName = (fullName) => {
 };
 
 export default function App() {
+  const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('worker');
   const [workers, setWorkers] = useState([]);
   const [shifts, setShifts] = useState([]);
@@ -172,8 +175,28 @@ export default function App() {
     window.print();
   };
 
-  // Sync state with Firestore or fallbacks
+  // Firebase Authentication setup
   useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // Sync state with Firestore collections (Public data path adhering to rule 1)
+  useEffect(() => {
+    if (!user) return;
+
     const workersCol = collection(db, 'artifacts', appId, 'public', 'data', 'workers');
     const shiftsCol = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
     const availCol = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities');
@@ -182,12 +205,12 @@ export default function App() {
     const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(w => !w._deleted);
       if (data.length > 0) setWorkers(data);
-    }, () => {});
+    }, (error) => console.error("Workers fetch error:", error));
 
     const unsubShifts = onSnapshot(shiftsCol, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(s => !s._deleted);
       if (data.length > 0) setShifts(data);
-    }, () => {});
+    }, (error) => console.error("Shifts fetch error:", error));
 
     const unsubAvail = onSnapshot(availCol, (snapshot) => {
       const availObj = {};
@@ -195,7 +218,7 @@ export default function App() {
         availObj[doc.id] = doc.data();
       });
       if (Object.keys(availObj).length > 0) setAvailabilities(availObj);
-    }, () => {});
+    }, (error) => console.error("Avail fetch error:", error));
 
     const unsubOrg = onSnapshot(orgCol, (snapshot) => {
       snapshot.docs.forEach(doc => {
@@ -203,7 +226,7 @@ export default function App() {
         if (doc.id === 'departments' && doc.data().list) setDepartments(doc.data().list);
         if (doc.id === 'positions' && doc.data().list) setPositions(doc.data().list);
       });
-    }, () => {});
+    }, (error) => console.error("Org fetch error:", error));
 
     return () => {
       unsubWorkers();
@@ -211,7 +234,7 @@ export default function App() {
       unsubAvail();
       unsubOrg();
     };
-  }, []);
+  }, [user]);
 
   const currentWorker = useMemo(() => {
     return workers.find(w => w.id === selectedWorkerId) || null;
@@ -255,7 +278,7 @@ export default function App() {
   // Profile Save Handler (Worker Self or Manager Editing)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    if (!editingProfile || !editingProfile.name.trim()) return;
+    if (!editingProfile || !editingProfile.name.trim() || !user) return;
 
     setWorkers(prev => prev.map(w => w.id === editingProfile.id ? editingProfile : w));
     setShowEditProfileModal(false);
@@ -263,23 +286,26 @@ export default function App() {
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', editingProfile.id);
       await setDoc(workerRef, editingProfile, { merge: true });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error saving profile:", err);
+    }
   };
 
   // Org Structure Handlers
   const handleAddLocation = async () => {
-    if (!newLocName.trim() || locations.includes(newLocName.trim())) return;
+    if (!newLocName.trim() || locations.includes(newLocName.trim()) || !user) return;
     const updated = [...locations, newLocName.trim()];
     setLocations(updated);
     setNewLocName('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error adding location:", e);
+    }
   };
 
   const handleSaveEditLocation = async (index) => {
-    if (!editLocName.trim()) return;
-    const oldName = locations[index];
+    if (!editLocName.trim() || !user) return;
     const updated = [...locations];
     updated[index] = editLocName.trim();
     setLocations(updated);
@@ -287,29 +313,36 @@ export default function App() {
     setEditLocName('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error editing location:", e);
+    }
   };
 
   const handleDeleteLocation = async (index) => {
+    if (!user) return;
     const updated = locations.filter((_, i) => i !== index);
     setLocations(updated);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error deleting location:", e);
+    }
   };
 
   const handleAddDepartment = async () => {
-    if (!newDeptName.trim() || departments.includes(newDeptName.trim())) return;
+    if (!newDeptName.trim() || departments.includes(newDeptName.trim()) || !user) return;
     const updated = [...departments, newDeptName.trim()];
     setDepartments(updated);
     setNewDeptName('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error adding department:", e);
+    }
   };
 
   const handleSaveEditDepartment = async (index) => {
-    if (!editDeptName.trim()) return;
+    if (!editDeptName.trim() || !user) return;
     const updated = [...departments];
     updated[index] = editDeptName.trim();
     setDepartments(updated);
@@ -317,19 +350,24 @@ export default function App() {
     setEditDeptName('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error editing department:", e);
+    }
   };
 
   const handleDeleteDepartment = async (index) => {
+    if (!user) return;
     const updated = departments.filter((_, i) => i !== index);
     setDepartments(updated);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error deleting department:", e);
+    }
   };
 
   const handleAddPosition = async () => {
-    if (!newPosName.trim()) return;
+    if (!newPosName.trim() || !user) return;
     const newPos = {
       id: 'p_' + Date.now(),
       name: newPosName.trim(),
@@ -343,11 +381,13 @@ export default function App() {
     setNewPosLoc('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error adding position:", e);
+    }
   };
 
   const handleSaveEditPosition = async (posId) => {
-    if (!editPosName.trim()) return;
+    if (!editPosName.trim() || !user) return;
     const updated = positions.map(p => p.id === posId ? {
       ...p,
       name: editPosName.trim(),
@@ -361,20 +401,25 @@ export default function App() {
     setEditPosLoc('');
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error editing position:", e);
+    }
   };
 
   const handleDeletePosition = async (posId) => {
+    if (!user) return;
     const updated = positions.filter(p => p.id !== posId);
     setPositions(updated);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error deleting position:", e);
+    }
   };
 
   const handleCreateWorker = async (e) => {
     e.preventDefault();
-    if (!newWorker.name.trim()) return;
+    if (!newWorker.name.trim() || !user) return;
     const newId = 'w_' + Date.now();
     const assignedPin = newWorker.pin.trim() || Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -408,10 +453,13 @@ export default function App() {
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
       await setDoc(workerRef, createdWorker);
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error creating worker:", err);
+    }
   };
 
   const handleDeleteWorker = async (workerId) => {
+    if (!user) return;
     setWorkers(prev => prev.filter(w => w.id !== workerId));
 
     setShifts(prev => prev.map(s => ({
@@ -428,22 +476,26 @@ export default function App() {
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
       await setDoc(workerRef, { _deleted: true });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error deleting worker:", err);
+    }
   };
 
   const handleUpdateWorkerPin = async (workerId, newPin) => {
-    if (!newPin.trim()) return;
+    if (!newPin.trim() || !user) return;
     setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, pin: newPin.trim() } : w));
     setEditingWorkerPinId(null);
 
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', workerId);
       await setDoc(workerRef, { pin: newPin.trim() }, { merge: true });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error updating PIN:", err);
+    }
   };
 
   const handleAvailabilityToggle = async (shiftId, status) => {
-    if (!currentWorker) return;
+    if (!currentWorker || !user) return;
 
     const updatedUserMap = {
       ...(availabilities[currentWorker.id] || {}),
@@ -461,12 +513,15 @@ export default function App() {
     try {
       const availRef = doc(db, 'artifacts', appId, 'public', 'data', 'availabilities', currentWorker.id);
       await setDoc(availRef, updatedUserMap, { merge: true });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error saving availability:", err);
+    }
   };
 
   // Create / Edit Shift submit
   const handleCreateShift = async (e) => {
     e.preventDefault();
+    if (!user) return;
     const newId = editingShift ? editingShift.id : 's_' + Date.now();
     
     // Automatically calculate required and target staff counts from positions selection
@@ -504,11 +559,14 @@ export default function App() {
     try {
       const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
       await setDoc(shiftRef, createdShift);
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error creating/editing shift:", err);
+    }
   };
 
   // Manager assigns worker to specific position slot within a shift
   const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
+    if (!user) return;
     let updatedShift;
     setShifts(prev => prev.map(s => {
       if (s.id === shiftId) {
@@ -541,19 +599,25 @@ export default function App() {
       try {
         const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
         await setDoc(shiftRef, updatedShift, { merge: true });
-      } catch (err) {}
+      } catch (err) {
+        console.error("Error assigning worker:", err);
+      }
     }
   };
 
   const handleDeleteShift = async (shiftId) => {
+    if (!user) return;
     setShifts(prev => prev.filter(s => s.id !== shiftId));
     try {
       const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftId);
       await setDoc(shiftRef, { _deleted: true });
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error deleting shift:", err);
+    }
   };
 
-  const handleSeedDemoData = () => {
+  const handleSeedDemoData = async () => {
+    if (!user) return;
     const defaultWorkers = [
       { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocation: 'Downtown Hub', allowedDepartment: '', allowedPosition: '' },
       { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocation: '', allowedDepartment: 'Management', allowedPosition: '' },
@@ -599,6 +663,17 @@ export default function App() {
     setWorkers(defaultWorkers);
     setShifts(defaultShifts);
     setSelectedWorkerId(defaultWorkers[0].id);
+
+    try {
+      for (const w of defaultWorkers) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'workers', w.id), w);
+      }
+      for (const s of defaultShifts) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', s.id), s);
+      }
+    } catch (e) {
+      console.error("Error seeding demo data:", e);
+    }
   };
 
   // Filter workers based on search modal input
@@ -1658,14 +1733,14 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL (, DEPARTMENTS, POSITIONS) */}
+      {/* ORGANIZATIONAL SETUP MODAL (LOCATIONS, DEPARTMENTS, POSITIONS) */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
                 <Building className="w-5 h-5 text-indigo-600" />
-                <span>Manage Venues, Sports & Positions</span>
+                <span>Manage Locations, Departments & Positions</span>
               </h3>
               <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -1676,7 +1751,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
-                <span>Venues</span>
+                <span>Locations</span>
               </h4>
               <div className="flex gap-2">
                 <input
@@ -1753,7 +1828,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Sports</span>
+                <span>Departments</span>
               </h4>
               <div className="flex gap-2">
                 <input
