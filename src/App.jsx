@@ -1674,15 +1674,18 @@ export default function App() {
                 </div>
               </div>
 
+            <div className="pt-2 flex justify-end">
               <button
+                type="button"
                 onClick={() => setShowOrgStructureModal(false)}
-                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 rounded-xl shadow mt-4 transition"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
               >
                 Done Setup
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* STAFF MANAGEMENT MODAL */}
       {showStaffManagementModal && (
