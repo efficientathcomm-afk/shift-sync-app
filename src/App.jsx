@@ -34,7 +34,9 @@ import {
   Layers,
   Settings,
   Info,
-  User
+  User,
+  Trash2,
+  Filter
 } from 'lucide-react';
 
 // Firebase Configuration
@@ -84,11 +86,23 @@ export default function App() {
   const [locations, setLocations] = useState(['Main Branch', 'Downtown Hub', 'Uptown Express']);
   const [departments, setDepartments] = useState(['Front of House', 'Kitchen / Back of House', 'Management']);
   const [positions, setPositions] = useState([
-    { id: 'p_1', name: 'Head Barista', department: 'Front of House' },
-    { id: 'p_2', name: 'Barista', department: 'Front of House' },
-    { id: 'p_3', name: 'Shift Supervisor', department: 'Management' },
-    { id: 'p_4', name: 'Line Cook', department: 'Kitchen / Back of House' }
+    { id: 'p_1', name: 'Head Barista', department: 'Front of House', location: '' },
+    { id: 'p_2', name: 'Barista', department: 'Front of House', location: '' },
+    { id: 'p_3', name: 'Shift Supervisor', department: 'Management', location: '' },
+    { id: 'p_4', name: 'Line Cook', department: 'Kitchen / Back of House', location: '' }
   ]);
+
+  // Editing state for Org Setup
+  const [editingLocIndex, setEditingLocIndex] = useState(null);
+  const [editLocName, setEditLocName] = useState('');
+
+  const [editingDeptIndex, setEditingDeptIndex] = useState(null);
+  const [editDeptName, setEditDeptName] = useState('');
+
+  const [editingPosId, setEditingPosId] = useState(null);
+  const [editPosName, setEditPosName] = useState('');
+  const [editPosDept, setEditPosDept] = useState('');
+  const [editPosLoc, setEditPosLoc] = useState('');
 
   // Worker authentication state
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
@@ -129,8 +143,18 @@ export default function App() {
   const [newDeptName, setNewDeptName] = useState('');
   const [newPosName, setNewPosName] = useState('');
   const [newPosDept, setNewPosDept] = useState('');
+  const [newPosLoc, setNewPosLoc] = useState('');
 
-  const [newWorker, setNewWorker] = useState({ name: '', role: 'Barista', email: '', phone: '', pin: '' });
+  const [newWorker, setNewWorker] = useState({ 
+    name: '', 
+    role: 'Barista', 
+    email: '', 
+    phone: '', 
+    pin: '',
+    allowedLocation: '',
+    allowedDepartment: '',
+    allowedPosition: ''
+  });
   
   // Shift creation form state
   const [newShift, setNewShift] = useState({
@@ -253,6 +277,27 @@ export default function App() {
     } catch (e) {}
   };
 
+  const handleSaveEditLocation = async (index) => {
+    if (!editLocName.trim()) return;
+    const oldName = locations[index];
+    const updated = [...locations];
+    updated[index] = editLocName.trim();
+    setLocations(updated);
+    setEditingLocIndex(null);
+    setEditLocName('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleDeleteLocation = async (index) => {
+    const updated = locations.filter((_, i) => i !== index);
+    setLocations(updated);
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'locations'), { list: updated });
+    } catch (e) {}
+  };
+
   const handleAddDepartment = async () => {
     if (!newDeptName.trim() || departments.includes(newDeptName.trim())) return;
     const updated = [...departments, newDeptName.trim()];
@@ -263,16 +308,65 @@ export default function App() {
     } catch (e) {}
   };
 
+  const handleSaveEditDepartment = async (index) => {
+    if (!editDeptName.trim()) return;
+    const updated = [...departments];
+    updated[index] = editDeptName.trim();
+    setDepartments(updated);
+    setEditingDeptIndex(null);
+    setEditDeptName('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleDeleteDepartment = async (index) => {
+    const updated = departments.filter((_, i) => i !== index);
+    setDepartments(updated);
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'departments'), { list: updated });
+    } catch (e) {}
+  };
+
   const handleAddPosition = async () => {
     if (!newPosName.trim()) return;
     const newPos = {
       id: 'p_' + Date.now(),
       name: newPosName.trim(),
-      department: newPosDept || departments[0] || 'General'
+      department: newPosDept || '',
+      location: newPosLoc || ''
     };
     const updated = [...positions, newPos];
     setPositions(updated);
     setNewPosName('');
+    setNewPosDept('');
+    setNewPosLoc('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleSaveEditPosition = async (posId) => {
+    if (!editPosName.trim()) return;
+    const updated = positions.map(p => p.id === posId ? {
+      ...p,
+      name: editPosName.trim(),
+      department: editPosDept,
+      location: editPosLoc
+    } : p);
+    setPositions(updated);
+    setEditingPosId(null);
+    setEditPosName('');
+    setEditPosDept('');
+    setEditPosLoc('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
+    } catch (e) {}
+  };
+
+  const handleDeletePosition = async (posId) => {
+    const updated = positions.filter(p => p.id !== posId);
+    setPositions(updated);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'positions'), { list: updated });
     } catch (e) {}
@@ -290,14 +384,26 @@ export default function App() {
       role: newWorker.role.trim() || positions[0]?.name || 'Team Member',
       email: newWorker.email.trim() || 'N/A',
       phone: newWorker.phone.trim() || 'N/A',
-      pin: assignedPin
+      pin: assignedPin,
+      allowedLocation: newWorker.allowedLocation || '',
+      allowedDepartment: newWorker.allowedDepartment || '',
+      allowedPosition: newWorker.allowedPosition || ''
     };
 
     setWorkers(prev => [...prev, createdWorker]);
     setSelectedWorkerId(newId);
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
-    setNewWorker({ name: '', role: 'Barista', email: '', phone: '', pin: '' });
+    setNewWorker({ 
+      name: '', 
+      role: 'Barista', 
+      email: '', 
+      phone: '', 
+      pin: '',
+      allowedLocation: '',
+      allowedDepartment: '',
+      allowedPosition: ''
+    });
 
     try {
       const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', newId);
@@ -449,9 +555,9 @@ export default function App() {
 
   const handleSeedDemoData = () => {
     const defaultWorkers = [
-      { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234' },
-      { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345' },
-      { id: 'w_3', name: 'Sam Taylor', role: 'Barista', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456' }
+      { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocation: 'Downtown Hub', allowedDepartment: '', allowedPosition: '' },
+      { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocation: '', allowedDepartment: 'Management', allowedPosition: '' },
+      { id: 'w_3', name: 'Sam Taylor', role: 'Barista', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456', allowedLocation: '', allowedDepartment: '', allowedPosition: '' }
     ];
 
     const defaultShifts = [
@@ -506,15 +612,38 @@ export default function App() {
     );
   }, [workers, searchQuery]);
 
-  // Filter shifts based on date selection filter
+  // Filter shifts based on date selection filter and worker restrictions (for worker view)
   const filteredShifts = useMemo(() => {
     let list = shifts;
+
+    // Apply worker profile restrictions if in Worker view
+    if (activeTab === 'worker' && currentWorker) {
+      if (currentWorker.allowedLocation) {
+        list = list.filter(s => s.location === currentWorker.allowedLocation);
+      }
+      if (currentWorker.allowedDepartment) {
+        list = list.filter(s => s.department === currentWorker.allowedDepartment);
+      }
+      if (currentWorker.allowedPosition) {
+        list = list.filter(s => (s.positionsList || []).some(p => p.positionName === currentWorker.allowedPosition));
+      }
+    }
+
     if (!showArchivedShifts) {
       list = list.filter(s => s.date >= SAMPLE_DATES[0]);
     }
     if (selectedDateFilter === 'ALL') return list;
     return list.filter(s => s.date === selectedDateFilter);
-  }, [shifts, selectedDateFilter, showArchivedShifts]);
+  }, [shifts, selectedDateFilter, showArchivedShifts, activeTab, currentWorker]);
+
+  // Filter available positions when building/editing a shift based on selected Location & Department
+  const filteredPositionsForShift = useMemo(() => {
+    return positions.filter(p => {
+      if (p.location && newShift.location && p.location !== newShift.location) return false;
+      if (p.department && newShift.department && p.department !== newShift.department) return false;
+      return true;
+    });
+  }, [positions, newShift.location, newShift.department]);
 
   // Manager schedule metrics
   const scheduleHealthSummary = useMemo(() => {
@@ -727,6 +856,19 @@ export default function App() {
               </div>
             </div>
 
+            {/* WORKER RESTRICTION BADGE IF SET */}
+            {currentWorker && (currentWorker.allowedLocation || currentWorker.allowedDepartment || currentWorker.allowedPosition) && (
+              <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2">
+                <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>
+                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
+                  {currentWorker.allowedLocation && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Location: {currentWorker.allowedLocation}</span>}
+                  {currentWorker.allowedDepartment && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Dept: {currentWorker.allowedDepartment}</span>}
+                  {currentWorker.allowedPosition && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Pos: {currentWorker.allowedPosition}</span>}
+                </span>
+              </div>
+            )}
+
             {/* DATE FILTER PILLS */}
             <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
               <button
@@ -837,7 +979,7 @@ export default function App() {
                   <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-slate-500">
                     <Calendar className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="text-sm font-bold text-slate-700">No active shifts scheduled</p>
-                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts matching the selected date filter.</p>
+                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts matching your location/department restrictions or date filter.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1369,7 +1511,7 @@ export default function App() {
       {/* EDIT WORKER PROFILE MODAL (FOR BOTH MANAGERS & INDIVIDUAL WORKERS) */}
       {showEditProfileModal && editingProfile && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
                 <User className="w-5 h-5 text-indigo-600" />
@@ -1400,7 +1542,7 @@ export default function App() {
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                 >
                   {positions.map(p => (
-                    <option key={p.id} value={p.name}>{p.name} ({p.department})</option>
+                    <option key={p.id} value={p.name}>{p.name} {p.department ? `(${p.department})` : ''}</option>
                   ))}
                   {!positions.some(p => p.name === editingProfile.role) && (
                     <option value={editingProfile.role}>{editingProfile.role}</option>
@@ -1438,6 +1580,63 @@ export default function App() {
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
+
+              {/* MANAGER SHIFT VISIBILITY RESTRICTIONS */}
+              {isManagerAuthenticated && (
+                <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-2.5 mt-2">
+                  <div className="flex items-center space-x-1.5 text-indigo-900 font-extrabold text-xs">
+                    <Filter className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Worker Shift Access Restrictions</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-700">
+                    Restrict which shifts this worker can view and sign up for. Leave blank for unrestricted access.
+                  </p>
+
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Location</label>
+                      <select
+                        value={editingProfile.allowedLocation || ''}
+                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedLocation: e.target.value })}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                      >
+                        <option value="">-- Any Location (No Restriction) --</option>
+                        {locations.map((loc, i) => (
+                          <option key={i} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Department</label>
+                      <select
+                        value={editingProfile.allowedDepartment || ''}
+                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedDepartment: e.target.value })}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                      >
+                        <option value="">-- Any Department (No Restriction) --</option>
+                        {departments.map((dept, i) => (
+                          <option key={i} value={dept}>{dept}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Position</label>
+                      <select
+                        value={editingProfile.allowedPosition || ''}
+                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedPosition: e.target.value })}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                      >
+                        <option value="">-- Any Position (No Restriction) --</option>
+                        {positions.map(p => (
+                          <option key={p.id} value={p.name}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-3 flex justify-end space-x-2 border-t border-slate-100">
                 <button
@@ -1495,11 +1694,57 @@ export default function App() {
                   Add
                 </button>
               </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                 {locations.map((loc, i) => (
-                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
-                    {loc}
-                  </span>
+                  <div key={i} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                    {editingLocIndex === i ? (
+                      <div className="flex items-center gap-1.5 w-full">
+                        <input
+                          type="text"
+                          value={editLocName}
+                          onChange={(e) => setEditLocName(e.target.value)}
+                          className="text-xs p-1 bg-slate-50 border border-slate-300 rounded flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditLocation(i)}
+                          className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingLocIndex(null)}
+                          className="text-xs text-slate-500 px-1"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xs font-bold text-slate-700">{loc}</span>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingLocIndex(i);
+                              setEditLocName(loc);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLocation(i)}
+                            className="p-1 text-slate-400 hover:text-rose-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1526,11 +1771,57 @@ export default function App() {
                   Add
                 </button>
               </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                 {departments.map((dept, i) => (
-                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
-                    {dept}
-                  </span>
+                  <div key={i} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                    {editingDeptIndex === i ? (
+                      <div className="flex items-center gap-1.5 w-full">
+                        <input
+                          type="text"
+                          value={editDeptName}
+                          onChange={(e) => setEditDeptName(e.target.value)}
+                          className="text-xs p-1 bg-slate-50 border border-slate-300 rounded flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditDepartment(i)}
+                          className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingDeptIndex(null)}
+                          className="text-xs text-slate-500 px-1"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xs font-bold text-slate-700">{dept}</span>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDeptIndex(i);
+                              setEditDeptName(dept);
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDepartment(i)}
+                            className="p-1 text-slate-400 hover:text-rose-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1541,38 +1832,130 @@ export default function App() {
                 <Briefcase className="w-4 h-4 text-indigo-600" />
                 <span>Positions / Job Titles</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                 <input
                   type="text"
                   placeholder="Position title..."
                   value={newPosName}
                   onChange={(e) => setNewPosName(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
                 />
                 <select
                   value={newPosDept}
                   onChange={(e) => setNewPosDept(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
                 >
+                  <option value="">No Dept Restriction</option>
                   {departments.map((d, i) => (
                     <option key={i} value={d}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  value={newPosLoc}
+                  onChange={(e) => setNewPosLoc(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
+                >
+                  <option value="">No Loc Restriction</option>
+                  {locations.map((l, i) => (
+                    <option key={i} value={l}>{l}</option>
                   ))}
                 </select>
                 <button
                   type="button"
                   onClick={handleAddPosition}
-                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg col-span-1"
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg sm:col-span-1"
                 >
                   Add Position
                 </button>
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                 {positions.map((pos) => (
-                  <div key={pos.id} className="p-2 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">{pos.name}</span>
-                      <span className="text-[10px] text-slate-500">{pos.department}</span>
-                    </div>
+                  <div key={pos.id} className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                    {editingPosId === pos.id ? (
+                      <div className="space-y-2 w-full">
+                        <input
+                          type="text"
+                          value={editPosName}
+                          onChange={(e) => setEditPosName(e.target.value)}
+                          className="w-full text-xs p-1.5 bg-slate-50 border border-slate-300 rounded font-bold"
+                        />
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <select
+                            value={editPosDept}
+                            onChange={(e) => setEditPosDept(e.target.value)}
+                            className="text-[11px] p-1 bg-slate-50 border border-slate-300 rounded"
+                          >
+                            <option value="">No Dept Restriction</option>
+                            {departments.map((d, i) => (
+                              <option key={i} value={d}>{d}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={editPosLoc}
+                            onChange={(e) => setEditPosLoc(e.target.value)}
+                            className="text-[11px] p-1 bg-slate-50 border border-slate-300 rounded"
+                          >
+                            <option value="">No Loc Restriction</option>
+                            {locations.map((l, i) => (
+                              <option key={i} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex justify-end space-x-1 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditPosition(pos.id)}
+                            className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded font-bold"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingPosId(null)}
+                            className="text-xs text-slate-500 px-2 py-1"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 block">{pos.name}</span>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              Dept: {pos.department || 'Any'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              Loc: {pos.location || 'Any'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPosId(pos.id);
+                              setEditPosName(pos.name);
+                              setEditPosDept(pos.department || '');
+                              setEditPosLoc(pos.location || '');
+                            }}
+                            className="p-1 text-slate-400 hover:text-indigo-600"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePosition(pos.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1648,6 +2031,13 @@ export default function App() {
                     <div className="pr-2">
                       <h4 className="font-bold text-slate-800 text-xs">{w.name}</h4>
                       <p className="text-[11px] text-slate-500">{w.role} • {w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
+                      {(w.allowedLocation || w.allowedDepartment || w.allowedPosition) && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {w.allowedLocation && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Loc: {w.allowedLocation}</span>}
+                          {w.allowedDepartment && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Dept: {w.allowedDepartment}</span>}
+                          {w.allowedPosition && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Pos: {w.allowedPosition}</span>}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-2">
@@ -1729,7 +2119,7 @@ export default function App() {
       {/* ADD WORKER MODAL */}
       {showAddWorkerModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">Add New Staff Member</h3>
               <button onClick={() => setShowAddWorkerModal(false)} className="text-slate-400 hover:text-slate-600">
@@ -1758,7 +2148,7 @@ export default function App() {
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 >
                   {positions.map(p => (
-                    <option key={p.id} value={p.name}>{p.name} ({p.department})</option>
+                    <option key={p.id} value={p.name}>{p.name} {p.department ? `(${p.department})` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -1795,6 +2185,45 @@ export default function App() {
                   onChange={(e) => setNewWorker({ ...newWorker, pin: e.target.value })}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 />
+              </div>
+
+              {/* SHIFT ACCESS RESTRICTION CONFIGURATION */}
+              <div className="bg-indigo-50/80 p-3 rounded-xl border border-indigo-200 space-y-2">
+                <span className="text-xs font-bold text-indigo-900 block">Shift Access Restrictions (Optional)</span>
+                <div className="space-y-1.5">
+                  <select
+                    value={newWorker.allowedLocation}
+                    onChange={(e) => setNewWorker({ ...newWorker, allowedLocation: e.target.value })}
+                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                  >
+                    <option value="">No Location Restriction</option>
+                    {locations.map((loc, i) => (
+                      <option key={i} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={newWorker.allowedDepartment}
+                    onChange={(e) => setNewWorker({ ...newWorker, allowedDepartment: e.target.value })}
+                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                  >
+                    <option value="">No Department Restriction</option>
+                    {departments.map((dept, i) => (
+                      <option key={i} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={newWorker.allowedPosition}
+                    onChange={(e) => setNewWorker({ ...newWorker, allowedPosition: e.target.value })}
+                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
+                  >
+                    <option value="">No Position Restriction</option>
+                    {positions.map(p => (
+                      <option key={p.id} value={p.name}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="pt-3 flex justify-end space-x-2">
@@ -1902,18 +2331,24 @@ export default function App() {
                     id="addPositionSelect"
                     className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
                   >
-                    {positions.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.department})</option>
+                    {filteredPositionsForShift.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.department ? `(${p.department})` : ''} {p.location ? `[${p.location}]` : ''}
+                      </option>
                     ))}
+                    {filteredPositionsForShift.length === 0 && (
+                      <option value="">No matching positions for this loc/dept</option>
+                    )}
                   </select>
                   <button
                     type="button"
+                    disabled={filteredPositionsForShift.length === 0}
                     onClick={() => {
                       const sel = document.getElementById('addPositionSelect');
-                      const posObj = positions.find(p => p.id === sel.value) || positions[0];
+                      const posObj = filteredPositionsForShift.find(p => p.id === sel.value) || filteredPositionsForShift[0];
                       if (posObj) togglePositionInShiftNew(posObj);
                     }}
-                    className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                    className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-50"
                   >
                     + Add Slot
                   </button>
