@@ -85,10 +85,10 @@ export default function App() {
   const [locations, setLocations] = useState(['Main Branch', 'Downtown Hub', 'Uptown Express']);
   const [departments, setDepartments] = useState(['Front of House', 'Kitchen / Back of House', 'Management']);
   const [positions, setPositions] = useState([
-    { id: 'p_1', name: 'Head Barista', department: 'Front of House', location: '' },
-    { id: 'p_2', name: 'Barista', department: 'Front of House', location: '' },
-    { id: 'p_3', name: 'Shift Supervisor', department: 'Management', location: '' },
-    { id: 'p_4', name: 'Line Cook', department: 'Kitchen / Back of House', location: '' }
+    { id: 'p_1', name: 'Head Barista', departments: ['Front of House'], locations: [] },
+    { id: 'p_2', name: 'Barista', departments: ['Front of House'], locations: [] },
+    { id: 'p_3', name: 'Shift Supervisor', departments: ['Management'], locations: [] },
+    { id: 'p_4', name: 'Line Cook', departments: ['Kitchen / Back of House'], locations: [] }
   ]);
 
   // Editing state for Org Setup
@@ -100,8 +100,8 @@ export default function App() {
 
   const [editingPosId, setEditingPosId] = useState(null);
   const [editPosName, setEditPosName] = useState('');
-  const [editPosDept, setEditPosDept] = useState('');
-  const [editPosLoc, setEditPosLoc] = useState('');
+  const [editPosDepts, setEditPosDepts] = useState([]);
+  const [editPosLocs, setEditPosLocs] = useState([]);
 
   // Worker authentication state
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
@@ -141,18 +141,17 @@ export default function App() {
   const [newLocName, setNewLocName] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
   const [newPosName, setNewPosName] = useState('');
-  const [newPosDept, setNewPosDept] = useState('');
-  const [newPosLoc, setNewPosLoc] = useState('');
+  const [newPosDepts, setNewPosDepts] = useState([]);
+  const [newPosLocs, setNewPosLocs] = useState([]);
 
   const [newWorker, setNewWorker] = useState({ 
     name: '', 
-    role: 'Barista', 
     email: '', 
     phone: '', 
     pin: '',
-    allowedLocation: '',
-    allowedDepartment: '',
-    allowedPosition: ''
+    allowedLocations: [],
+    allowedDepartments: [],
+    allowedPositions: []
   });
   
   // Shift creation form state
@@ -171,7 +170,7 @@ export default function App() {
     window.print();
   };
 
-  // Firebase Authentication setup with robust fallback
+  // Firebase Authentication setup
   useEffect(() => {
     if (!auth) {
       setUser({ uid: 'local-fallback-user' });
@@ -211,7 +210,15 @@ export default function App() {
       if (localAvail) setAvailabilities(JSON.parse(localAvail));
       if (localLocs) setLocations(JSON.parse(localLocs));
       if (localDepts) setDepartments(JSON.parse(localDepts));
-      if (localPoss) setPositions(JSON.parse(localPoss));
+      if (localPoss) {
+        // Migrate old position format (single department/location strings) to arrays if needed
+        const parsedPoss = JSON.parse(localPoss).map(p => ({
+          ...p,
+          departments: p.departments || (p.department ? [p.department] : []),
+          locations: p.locations || (p.location ? [p.location] : [])
+        }));
+        setPositions(parsedPoss);
+      }
     } catch (e) {
       console.error("Local storage load error:", e);
     }
@@ -264,8 +271,13 @@ export default function App() {
           localStorage.setItem('shiftsync_depts', JSON.stringify(doc.data().list));
         }
         if (doc.id === 'positions' && doc.data().list) {
-          setPositions(doc.data().list);
-          localStorage.setItem('shiftsync_poss', JSON.stringify(doc.data().list));
+          const parsed = doc.data().list.map(p => ({
+            ...p,
+            departments: p.departments || (p.department ? [p.department] : []),
+            locations: p.locations || (p.location ? [p.location] : [])
+          }));
+          setPositions(parsed);
+          localStorage.setItem('shiftsync_poss', JSON.stringify(parsed));
         }
       });
     }, (error) => console.warn("Org fetch warning:", error));
@@ -317,7 +329,6 @@ export default function App() {
     }
   };
 
-  // Universal helper saver for LocalStorage + optional Firestore sync
   const persistWorkerUpdate = async (updatedList) => {
     setWorkers(updatedList);
     localStorage.setItem('shiftsync_workers', JSON.stringify(updatedList));
@@ -328,7 +339,6 @@ export default function App() {
     localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedList));
   };
 
-  // Profile Save Handler (Worker Self or Manager Editing)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!editingProfile || !editingProfile.name.trim()) return;
@@ -431,14 +441,14 @@ export default function App() {
     const newPos = {
       id: 'p_' + Date.now(),
       name: newPosName.trim(),
-      department: newPosDept || '',
-      location: newPosLoc || ''
+      departments: newPosDepts,
+      locations: newPosLocs
     };
     const updated = [...positions, newPos];
     setPositions(updated);
     setNewPosName('');
-    setNewPosDept('');
-    setNewPosLoc('');
+    setNewPosDepts([]);
+    setNewPosLocs([]);
     localStorage.setItem('shiftsync_poss', JSON.stringify(updated));
     try {
       if (db) {
@@ -452,14 +462,14 @@ export default function App() {
     const updated = positions.map(p => p.id === posId ? {
       ...p,
       name: editPosName.trim(),
-      department: editPosDept,
-      location: editPosLoc
+      departments: editPosDepts,
+      locations: editPosLocs
     } : p);
     setPositions(updated);
     setEditingPosId(null);
     setEditPosName('');
-    setEditPosDept('');
-    setEditPosLoc('');
+    setEditPosDepts([]);
+    setEditPosLocs([]);
     localStorage.setItem('shiftsync_poss', JSON.stringify(updated));
     try {
       if (db) {
@@ -488,13 +498,12 @@ export default function App() {
     const createdWorker = {
       id: newId,
       name: newWorker.name.trim(),
-      role: newWorker.role.trim() || positions[0]?.name || 'Team Member',
       email: newWorker.email.trim() || 'N/A',
       phone: newWorker.phone.trim() || 'N/A',
       pin: assignedPin,
-      allowedLocation: newWorker.allowedLocation || '',
-      allowedDepartment: newWorker.allowedDepartment || '',
-      allowedPosition: newWorker.allowedPosition || ''
+      allowedLocations: newWorker.allowedLocations || [],
+      allowedDepartments: newWorker.allowedDepartments || [],
+      allowedPositions: newWorker.allowedPositions || []
     };
 
     const updated = [...workers, createdWorker];
@@ -504,13 +513,12 @@ export default function App() {
     setShowAddWorkerModal(false);
     setNewWorker({ 
       name: '', 
-      role: 'Barista', 
       email: '', 
       phone: '', 
       pin: '',
-      allowedLocation: '',
-      allowedDepartment: '',
-      allowedPosition: ''
+      allowedLocations: [],
+      allowedDepartments: [],
+      allowedPositions: []
     });
 
     try {
@@ -586,7 +594,6 @@ export default function App() {
     } catch (err) { console.warn(err); }
   };
 
-  // Create / Edit Shift submit
   const handleCreateShift = async (e) => {
     e.preventDefault();
     const newId = editingShift ? editingShift.id : 's_' + Date.now();
@@ -633,7 +640,6 @@ export default function App() {
     } catch (err) { console.warn(err); }
   };
 
-  // Manager assigns worker to specific position slot within a shift
   const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
     let updatedShift;
     const updatedShifts = shifts.map(s => {
@@ -687,9 +693,9 @@ export default function App() {
 
   const handleSeedDemoData = async () => {
     const defaultWorkers = [
-      { id: 'w_1', name: 'Alex Rivera', role: 'Head Barista', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocation: 'Downtown Hub', allowedDepartment: '', allowedPosition: '' },
-      { id: 'w_2', name: 'Jordan Lee', role: 'Shift Supervisor', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocation: '', allowedDepartment: 'Management', allowedPosition: '' },
-      { id: 'w_3', name: 'Sam Taylor', role: 'Barista', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456', allowedLocation: '', allowedDepartment: '', allowedPosition: '' }
+      { id: 'w_1', name: 'Alex Rivera', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocations: ['Downtown Hub'], allowedDepartments: [], allowedPositions: [] },
+      { id: 'w_2', name: 'Jordan Lee', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocations: [], allowedDepartments: ['Management'], allowedPositions: [] },
+      { id: 'w_3', name: 'Sam Taylor', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456', allowedLocations: [], allowedDepartments: [], allowedPositions: [] }
     ];
 
     const defaultShifts = [
@@ -710,21 +716,6 @@ export default function App() {
           { slotIndex: 0, workerId: 'w_1' }
         ],
         assignedWorkerIds: ['w_1'] 
-      },
-      { 
-        id: 's_2', 
-        date: SAMPLE_DATES[0], 
-        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
-        location: 'Downtown Hub', 
-        department: 'Kitchen / Back of House',
-        requiredCount: 2, 
-        idealCount: 2, 
-        positionsList: [
-          { positionId: 'p_4', positionName: 'Line Cook', required: true },
-          { positionId: 'p_4', positionName: 'Line Cook', required: true }
-        ],
-        assignedPositions: [],
-        assignedWorkerIds: [] 
       }
     ];
 
@@ -733,13 +724,11 @@ export default function App() {
     setSelectedWorkerId(defaultWorkers[0].id);
   };
 
-  // Filter workers based on search modal input
   const searchedWorkers = useMemo(() => {
     if (!searchQuery.trim()) return workers;
     const q = searchQuery.toLowerCase();
     return workers.filter(w => 
       w.name.toLowerCase().includes(q) || 
-      w.role.toLowerCase().includes(q) || 
       w.email.toLowerCase().includes(q)
     );
   }, [workers, searchQuery]);
@@ -749,14 +738,18 @@ export default function App() {
     let list = shifts;
 
     if (activeTab === 'worker' && currentWorker) {
-      if (currentWorker.allowedLocation) {
-        list = list.filter(s => s.location === currentWorker.allowedLocation);
+      const allowedLocs = currentWorker.allowedLocations || [];
+      const allowedDepts = currentWorker.allowedDepartments || [];
+      const allowedPoss = currentWorker.allowedPositions || [];
+
+      if (allowedLocs.length > 0) {
+        list = list.filter(s => allowedLocs.includes(s.location));
       }
-      if (currentWorker.allowedDepartment) {
-        list = list.filter(s => s.department === currentWorker.allowedDepartment);
+      if (allowedDepts.length > 0) {
+        list = list.filter(s => allowedDepts.includes(s.department));
       }
-      if (currentWorker.allowedPosition) {
-        list = list.filter(s => (s.positionsList || []).some(p => p.positionName === currentWorker.allowedPosition));
+      if (allowedPoss.length > 0) {
+        list = list.filter(s => (s.positionsList || []).some(p => allowedPoss.includes(p.positionName)));
       }
     }
 
@@ -770,13 +763,15 @@ export default function App() {
   // Filter available positions when building/editing a shift based on selected Location & Department
   const filteredPositionsForShift = useMemo(() => {
     return positions.filter(p => {
-      if (p.location && newShift.location && p.location !== newShift.location) return false;
-      if (p.department && newShift.department && p.department !== newShift.department) return false;
+      const posLocs = p.locations || [];
+      const posDepts = p.departments || [];
+
+      if (posLocs.length > 0 && newShift.location && !posLocs.includes(newShift.location)) return false;
+      if (posDepts.length > 0 && newShift.department && !posDepts.includes(newShift.department)) return false;
       return true;
     });
   }, [positions, newShift.location, newShift.department]);
 
-  // Manager schedule metrics
   const scheduleHealthSummary = useMemo(() => {
     let totalNeeded = 0;
     let totalTarget = 0;
@@ -856,7 +851,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* TAB SWITCHER BUTTONS */}
           <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700/60">
             <button
               onClick={() => setActiveTab('worker')}
@@ -884,7 +878,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* UPCOMING SHIFT COVERAGE STATUS BAR AT TOP */}
+      {/* UPCOMING SHIFT COVERAGE STATUS BAR */}
       <div className="max-w-6xl mx-auto px-4 pt-4 print:hidden">
         <div className="bg-[#111633] text-white rounded-2xl p-4 shadow-lg border border-slate-800/80 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5 w-full md:w-auto">
@@ -918,7 +912,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* SUBMISSION NOTIFICATION BANNER */}
       {submissionSuccess && (
         <div className="bg-emerald-600 text-white text-center py-2 px-4 text-xs font-bold flex items-center justify-center space-x-2 animate-fade-in print:hidden">
           <Check className="w-4 h-4" />
@@ -949,7 +942,7 @@ export default function App() {
                     >
                       {workers.map(w => (
                         <option key={w.id} value={w.id}>
-                          {w.name} ({w.role})
+                          {w.name}
                         </option>
                       ))}
                     </select>
@@ -986,16 +979,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* WORKER RESTRICTION BADGE IF SET */}
-            {currentWorker && (currentWorker.allowedLocation || currentWorker.allowedDepartment || currentWorker.allowedPosition) && (
-              <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2">
+            {/* WORKER RESTRICTION BADGES */}
+            {currentWorker && ((currentWorker.allowedLocations || []).length > 0 || (currentWorker.allowedDepartments || []).length > 0 || (currentWorker.allowedPositions || []).length > 0) && (
+              <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2 flex-wrap gap-1">
                 <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>
-                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
-                  {currentWorker.allowedLocation && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Location: {currentWorker.allowedLocation}</span>}
-                  {currentWorker.allowedDepartment && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Dept: {currentWorker.allowedDepartment}</span>}
-                  {currentWorker.allowedPosition && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Pos: {currentWorker.allowedPosition}</span>}
-                </span>
+                <span><strong>Filtered Shift View:</strong></span>
+                {(currentWorker.allowedLocations || []).length > 0 && (
+                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Locations: {currentWorker.allowedLocations.join(', ')}</span>
+                )}
+                {(currentWorker.allowedDepartments || []).length > 0 && (
+                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Depts: {currentWorker.allowedDepartments.join(', ')}</span>
+                )}
+                {(currentWorker.allowedPositions || []).length > 0 && (
+                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Positions: {currentWorker.allowedPositions.join(', ')}</span>
+                )}
               </div>
             )}
 
@@ -1082,7 +1079,7 @@ export default function App() {
                 <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl">
                   <div className="flex items-center space-x-2 text-xs font-bold">
                     <UserCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Unlocked as: <strong>{currentWorker.name}</strong> ({currentWorker.role})</span>
+                    <span>Unlocked as: <strong>{currentWorker.name}</strong></span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <button
@@ -1115,10 +1112,8 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
-                      
                       const assignedSlots = shift.assignedPositions || [];
                       const isAssigned = assignedSlots.some(ap => ap.workerId === currentWorker.id);
-                      
                       const assignedCount = assignedSlots.length;
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
@@ -1164,7 +1159,6 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* SUMMARY PROGRESS BAR */}
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                               <div className="flex justify-between items-center text-[11px]">
                                 {assignedCount < requiredCount ? (
@@ -1204,7 +1198,6 @@ export default function App() {
                             </p>
                           </div>
 
-                          {/* WORKER AVAILABILITY SELECTOR */}
                           <div 
                             className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
                             onClick={(e) => e.stopPropagation()}
@@ -1349,7 +1342,6 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* MANAGER STATS SUMMARY */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                     <span className="text-[11px] font-bold text-slate-400 uppercase">Active Shifts</span>
@@ -1373,7 +1365,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* DATE FILTER & ARCHIVE TOGGLE BAR */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200">
                   <div className="flex items-center space-x-2 overflow-x-auto w-full sm:w-auto scrollbar-none">
                     <button
@@ -1410,7 +1401,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* SHIFTS LIST FOR MANAGERS WITH POSITION ASSIGNMENTS */}
                 {filteredShifts.length === 0 ? (
                   <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 text-slate-500 space-y-3">
                     <Calendar className="w-10 h-10 mx-auto text-slate-300" />
@@ -1478,7 +1468,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* POSITION-BASED ASSIGNMENT GRID FOR MANAGERS */}
                           <div>
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
                               Position Slots & Worker Scheduling
@@ -1536,7 +1525,7 @@ export default function App() {
                                             if (pref === 'unavailable') badge = ' ✕ (Unavailable)';
                                             return (
                                               <option key={w.id} value={w.id}>
-                                                {w.name} ({w.role}){badge}
+                                                {w.name}{badge}
                                               </option>
                                             );
                                           })}
@@ -1559,7 +1548,7 @@ export default function App() {
         )}
       </main>
 
-      {/* INSPECT SHIFT POPUP MODAL (WORKER & MANAGER DETAIL VIEW) */}
+      {/* INSPECT SHIFT POPUP MODAL */}
       {inspectingShift && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-5">
@@ -1637,7 +1626,7 @@ export default function App() {
         </div>
       )}
 
-      {/* EDIT WORKER PROFILE MODAL (FOR BOTH MANAGERS & INDIVIDUAL WORKERS) */}
+      {/* EDIT WORKER PROFILE MODAL */}
       {showEditProfileModal && editingProfile && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -1661,22 +1650,6 @@ export default function App() {
                   onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Role / Primary Position</label>
-                <select
-                  value={editingProfile.role}
-                  onChange={(e) => setEditingProfile({ ...editingProfile, role: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                >
-                  {positions.map(p => (
-                    <option key={p.id} value={p.name}>{p.name} {p.department ? `(${p.department})` : ''}</option>
-                  ))}
-                  {!positions.some(p => p.name === editingProfile.role) && (
-                    <option value={editingProfile.role}>{editingProfile.role}</option>
-                  )}
-                </select>
               </div>
 
               <div>
@@ -1710,58 +1683,95 @@ export default function App() {
                 />
               </div>
 
-              {/* MANAGER SHIFT VISIBILITY RESTRICTIONS */}
+              {/* MANAGER MULTI-SELECT SHIFT RESTRICTIONS */}
               {isManagerAuthenticated && (
-                <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-2.5 mt-2">
+                <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-3 mt-2">
                   <div className="flex items-center space-x-1.5 text-indigo-900 font-extrabold text-xs">
                     <Filter className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Worker Shift Access Restrictions</span>
+                    <span>Worker Shift Access Restrictions (Multi-Select)</span>
                   </div>
                   <p className="text-[11px] text-indigo-700">
-                    Restrict which shifts this worker can view and sign up for. Leave blank for unrestricted access.
+                    Select multiple venues, sports, or positions. Leave all unchecked for unrestricted access.
                   </p>
 
-                  <div className="space-y-2 pt-1">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Location</label>
-                      <select
-                        value={editingProfile.allowedLocation || ''}
-                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedLocation: e.target.value })}
-                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                      >
-                        <option value="">-- Any Location (No Restriction) --</option>
-                        {locations.map((loc, i) => (
-                          <option key={i} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                  {/* Locations Checkboxes */}
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Venues / Locations</span>
+                    <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
+                      {locations.map((loc, i) => {
+                        const currentAllowed = editingProfile.allowedLocations || [];
+                        const isChecked = currentAllowed.includes(loc);
+                        return (
+                          <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const next = e.target.checked 
+                                  ? [...currentAllowed, loc] 
+                                  : currentAllowed.filter(l => l !== loc);
+                                setEditingProfile({ ...editingProfile, allowedLocations: next });
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="truncate">{loc}</span>
+                          </label>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Department</label>
-                      <select
-                        value={editingProfile.allowedDepartment || ''}
-                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedDepartment: e.target.value })}
-                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                      >
-                        <option value="">-- Any Department (No Restriction) --</option>
-                        {departments.map((dept, i) => (
-                          <option key={i} value={dept}>{dept}</option>
-                        ))}
-                      </select>
+                  {/* Departments Checkboxes */}
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Sports / Departments</span>
+                    <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
+                      {departments.map((dept, i) => {
+                        const currentAllowed = editingProfile.allowedDepartments || [];
+                        const isChecked = currentAllowed.includes(dept);
+                        return (
+                          <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const next = e.target.checked 
+                                  ? [...currentAllowed, dept] 
+                                  : currentAllowed.filter(d => d !== dept);
+                                setEditingProfile({ ...editingProfile, allowedDepartments: next });
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="truncate">{dept}</span>
+                          </label>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Restricted Position</label>
-                      <select
-                        value={editingProfile.allowedPosition || ''}
-                        onChange={(e) => setEditingProfile({ ...editingProfile, allowedPosition: e.target.value })}
-                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                      >
-                        <option value="">-- Any Position (No Restriction) --</option>
-                        {positions.map(p => (
-                          <option key={p.id} value={p.name}>{p.name}</option>
-                        ))}
-                      </select>
+                  {/* Positions Checkboxes */}
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Positions</span>
+                    <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
+                      {positions.map((pos) => {
+                        const currentAllowed = editingProfile.allowedPositions || [];
+                        const isChecked = currentAllowed.includes(pos.name);
+                        return (
+                          <label key={pos.id} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const next = e.target.checked 
+                                  ? [...currentAllowed, pos.name] 
+                                  : currentAllowed.filter(p => p !== pos.name);
+                                setEditingProfile({ ...editingProfile, allowedPositions: next });
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="truncate">{pos.name}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1787,14 +1797,14 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL */}
+      {/* ORGANIZATIONAL SETUP MODAL (MULTI-SELECT FOR POSITIONS) */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
                 <Building className="w-5 h-5 text-indigo-600" />
-                <span>Manage Locations, Departments & Positions</span>
+                <span>Manage Venues, Sports & Positions</span>
               </h3>
               <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -1805,12 +1815,12 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
-                <span>Locations</span>
+                <span>Venues</span>
               </h4>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="New location name..."
+                  placeholder="New venue name..."
                   value={newLocName}
                   onChange={(e) => setNewLocName(e.target.value)}
                   className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
@@ -1882,12 +1892,12 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Departments</span>
+                <span>Sports / Departments</span>
               </h4>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="New department name..."
+                  placeholder="New sport/department name..."
                   value={newDeptName}
                   onChange={(e) => setNewDeptName(e.target.value)}
                   className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
@@ -1955,88 +1965,139 @@ export default function App() {
               </div>
             </div>
 
-            {/* POSITIONS SECTION */}
+            {/* POSITIONS SECTION WITH MULTI-SELECT DEPARTMENTS & LOCATIONS */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Briefcase className="w-4 h-4 text-indigo-600" />
-                <span>Positions / Job Titles</span>
+                <span>Positions / Job Titles (Multi-Venue & Multi-Department)</span>
               </h4>
               
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <div className="space-y-2 bg-white p-3 rounded-xl border border-slate-300">
                 <input
                   type="text"
-                  placeholder="Position title..."
+                  placeholder="Position title (e.g. Referee, Coach)..."
                   value={newPosName}
                   onChange={(e) => setNewPosName(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
+                  className="text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg w-full font-bold"
                 />
-                <select
-                  value={newPosDept}
-                  onChange={(e) => setNewPosDept(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
-                >
-                  <option value="">No Dept Restriction</option>
-                  {departments.map((d, i) => (
-                    <option key={i} value={d}>{d}</option>
-                  ))}
-                </select>
-                <select
-                  value={newPosLoc}
-                  onChange={(e) => setNewPosLoc(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg sm:col-span-1"
-                >
-                  <option value="">No Loc Restriction</option>
-                  {locations.map((l, i) => (
-                    <option key={i} value={l}>{l}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAddPosition}
-                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg sm:col-span-1"
-                >
-                  Add Position
-                </button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Applicable Departments</span>
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
+                      {departments.map((d, i) => (
+                        <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newPosDepts.includes(d)}
+                            onChange={(e) => {
+                              const next = e.target.checked 
+                                ? [...newPosDepts, d] 
+                                : newPosDepts.filter(item => item !== d);
+                              setNewPosDepts(next);
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{d}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Applicable Venues</span>
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
+                      {locations.map((l, i) => (
+                        <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newPosLocs.includes(l)}
+                            onChange={(e) => {
+                              const next = e.target.checked 
+                                ? [...newPosLocs, l] 
+                                : newPosLocs.filter(item => item !== l);
+                              setNewPosLocs(next);
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{l}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleAddPosition}
+                    className="bg-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-indigo-700"
+                  >
+                    + Add Position
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+              <div className="grid grid-cols-1 gap-2 pt-2">
                 {positions.map((pos) => (
-                  <div key={pos.id} className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                  <div key={pos.id} className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
                     {editingPosId === pos.id ? (
-                      <div className="space-y-2 w-full">
+                      <div className="space-y-3 w-full">
                         <input
                           type="text"
                           value={editPosName}
                           onChange={(e) => setEditPosName(e.target.value)}
-                          className="w-full text-xs p-1.5 bg-slate-50 border border-slate-300 rounded font-bold"
+                          className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-bold"
                         />
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <select
-                            value={editPosDept}
-                            onChange={(e) => setEditPosDept(e.target.value)}
-                            className="text-[11px] p-1 bg-slate-50 border border-slate-300 rounded"
-                          >
-                            <option value="">No Dept Restriction</option>
-                            {departments.map((d, i) => (
-                              <option key={i} value={d}>{d}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={editPosLoc}
-                            onChange={(e) => setEditPosLoc(e.target.value)}
-                            className="text-[11px] p-1 bg-slate-50 border border-slate-300 rounded"
-                          >
-                            <option value="">No Loc Restriction</option>
-                            {locations.map((l, i) => (
-                              <option key={i} value={l}>{l}</option>
-                            ))}
-                          </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-500 block mb-1">Departments</span>
+                            <div className="bg-slate-50 p-2 rounded border border-slate-200 max-h-24 overflow-y-auto space-y-1">
+                              {departments.map((d, i) => (
+                                <label key={i} className="flex items-center space-x-1 text-[11px] text-slate-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={editPosDepts.includes(d)}
+                                    onChange={(e) => {
+                                      const next = e.target.checked 
+                                        ? [...editPosDepts, d] 
+                                        : editPosDepts.filter(item => item !== d);
+                                      setEditPosDepts(next);
+                                    }}
+                                    className="rounded text-indigo-600"
+                                  />
+                                  <span>{d}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-500 block mb-1">Venues</span>
+                            <div className="bg-slate-50 p-2 rounded border border-slate-200 max-h-24 overflow-y-auto space-y-1">
+                              {locations.map((l, i) => (
+                                <label key={i} className="flex items-center space-x-1 text-[11px] text-slate-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={editPosLocs.includes(l)}
+                                    onChange={(e) => {
+                                      const next = e.target.checked 
+                                        ? [...editPosLocs, l] 
+                                        : editPosLocs.filter(item => item !== l);
+                                      setEditPosLocs(next);
+                                    }}
+                                    className="rounded text-indigo-600"
+                                  />
+                                  <span>{l}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                         <div className="flex justify-end space-x-1 pt-1">
                           <button
                             type="button"
                             onClick={() => handleSaveEditPosition(pos.id)}
-                            className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded font-bold"
+                            className="text-xs bg-emerald-600 text-white px-3 py-1 rounded font-bold"
                           >
                             Save
                           </button>
@@ -2053,12 +2114,12 @@ export default function App() {
                       <>
                         <div>
                           <span className="text-xs font-bold text-slate-800 block">{pos.name}</span>
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                              Dept: {pos.department || 'Any'}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              Depts: {(pos.departments || []).length > 0 ? pos.departments.join(', ') : 'Any'}
                             </span>
-                            <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                              Loc: {pos.location || 'Any'}
+                            <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              Venues: {(pos.locations || []).length > 0 ? pos.locations.join(', ') : 'Any'}
                             </span>
                           </div>
                         </div>
@@ -2068,19 +2129,19 @@ export default function App() {
                             onClick={() => {
                               setEditingPosId(pos.id);
                               setEditPosName(pos.name);
-                              setEditPosDept(pos.department || '');
-                              setEditPosLoc(pos.location || '');
+                              setEditPosDepts(pos.departments || []);
+                              setEditPosLocs(pos.locations || []);
                             }}
                             className="p-1 text-slate-400 hover:text-indigo-600"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            <Edit3 className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeletePosition(pos.id)}
                             className="p-1 text-slate-400 hover:text-rose-600"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </>
@@ -2125,7 +2186,7 @@ export default function App() {
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search staff by name, role, email..."
+                  placeholder="Search staff by name, email..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
@@ -2159,12 +2220,12 @@ export default function App() {
                   <div key={w.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                     <div className="pr-2">
                       <h4 className="font-bold text-slate-800 text-xs">{w.name}</h4>
-                      <p className="text-[11px] text-slate-500">{w.role} • {w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
-                      {(w.allowedLocation || w.allowedDepartment || w.allowedPosition) && (
+                      <p className="text-[11px] text-slate-500">{w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
+                      {((w.allowedLocations || []).length > 0 || (w.allowedDepartments || []).length > 0 || (w.allowedPositions || []).length > 0) && (
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {w.allowedLocation && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Loc: {w.allowedLocation}</span>}
-                          {w.allowedDepartment && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Dept: {w.allowedDepartment}</span>}
-                          {w.allowedPosition && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Pos: {w.allowedPosition}</span>}
+                          {(w.allowedLocations || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Locs: {w.allowedLocations.join(', ')}</span>}
+                          {(w.allowedDepartments || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Depts: {w.allowedDepartments.join(', ')}</span>}
+                          {(w.allowedPositions || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Pos: {w.allowedPositions.join(', ')}</span>}
                         </div>
                       )}
                     </div>
@@ -2245,7 +2306,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD WORKER MODAL */}
+      {/* ADD WORKER MODAL (NO PRIMARY POSITION, MULTI-SELECT RESTRICTIONS) */}
       {showAddWorkerModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2267,19 +2328,6 @@ export default function App() {
                   onChange={(e) => setNewWorker({ ...newWorker, name: e.target.value })}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Primary Position / Role</label>
-                <select
-                  value={newWorker.role}
-                  onChange={(e) => setNewWorker({ ...newWorker, role: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                >
-                  {positions.map(p => (
-                    <option key={p.id} value={p.name}>{p.name} {p.department ? `(${p.department})` : ''}</option>
-                  ))}
-                </select>
               </div>
 
               <div>
@@ -2316,42 +2364,77 @@ export default function App() {
                 />
               </div>
 
-              {/* SHIFT ACCESS RESTRICTION CONFIGURATION */}
-              <div className="bg-indigo-50/80 p-3 rounded-xl border border-indigo-200 space-y-2">
-                <span className="text-xs font-bold text-indigo-900 block">Shift Access Restrictions (Optional)</span>
-                <div className="space-y-1.5">
-                  <select
-                    value={newWorker.allowedLocation}
-                    onChange={(e) => setNewWorker({ ...newWorker, allowedLocation: e.target.value })}
-                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                  >
-                    <option value="">No Location Restriction</option>
+              {/* MULTI-SELECT SHIFT ACCESS RESTRICTIONS */}
+              <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-3">
+                <span className="text-xs font-bold text-indigo-900 block">Shift Access Restrictions (Multi-Select)</span>
+                
+                {/* Locations */}
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Venues</span>
+                  <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
                     {locations.map((loc, i) => (
-                      <option key={i} value={loc}>{loc}</option>
+                      <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newWorker.allowedLocations.includes(loc)}
+                          onChange={(e) => {
+                            const next = e.target.checked 
+                              ? [...newWorker.allowedLocations, loc] 
+                              : newWorker.allowedLocations.filter(l => l !== loc);
+                            setNewWorker({ ...newWorker, allowedLocations: next });
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{loc}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                </div>
 
-                  <select
-                    value={newWorker.allowedDepartment}
-                    onChange={(e) => setNewWorker({ ...newWorker, allowedDepartment: e.target.value })}
-                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                  >
-                    <option value="">No Department Restriction</option>
+                {/* Departments */}
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Sports / Departments</span>
+                  <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
                     {departments.map((dept, i) => (
-                      <option key={i} value={dept}>{dept}</option>
+                      <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newWorker.allowedDepartments.includes(dept)}
+                          onChange={(e) => {
+                            const next = e.target.checked 
+                              ? [...newWorker.allowedDepartments, dept] 
+                              : newWorker.allowedDepartments.filter(d => d !== dept);
+                            setNewWorker({ ...newWorker, allowedDepartments: next });
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{dept}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                </div>
 
-                  <select
-                    value={newWorker.allowedPosition}
-                    onChange={(e) => setNewWorker({ ...newWorker, allowedPosition: e.target.value })}
-                    className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg"
-                  >
-                    <option value="">No Position Restriction</option>
-                    {positions.map(p => (
-                      <option key={p.id} value={p.name}>{p.name}</option>
+                {/* Positions */}
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Positions</span>
+                  <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
+                    {positions.map((pos) => (
+                      <label key={pos.id} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newWorker.allowedPositions.includes(pos.name)}
+                          onChange={(e) => {
+                            const next = e.target.checked 
+                              ? [...newWorker.allowedPositions, pos.name] 
+                              : newWorker.allowedPositions.filter(p => p !== pos.name);
+                            setNewWorker({ ...newWorker, allowedPositions: next });
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{pos.name}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
 
@@ -2375,7 +2458,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD / EDIT SHIFT MODAL WITH POSITION BREAKDOWN */}
+      {/* ADD / EDIT SHIFT MODAL */}
       {showAddShiftModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2440,7 +2523,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* POSITIONS CONFIGURATION AREA */}
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -2454,7 +2536,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* SELECT POSITION TO ADD */}
                 <div className="flex gap-2">
                   <select
                     id="addPositionSelect"
@@ -2462,7 +2543,7 @@ export default function App() {
                   >
                     {filteredPositionsForShift.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.name} {p.department ? `(${p.department})` : ''} {p.location ? `[${p.location}]` : ''}
+                        {p.name}
                       </option>
                     ))}
                     {filteredPositionsForShift.length === 0 && (
@@ -2483,7 +2564,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* ADDED POSITIONS LIST */}
                 <div className="space-y-1.5 pt-1">
                   {newShift.positionsList.length === 0 ? (
                     <p className="text-xs text-slate-400 italic text-center py-2">No position slots added yet.</p>
@@ -2539,14 +2619,14 @@ export default function App() {
         </div>
       )}
 
-      {/* WORKER SCHEDULE REPORT MODAL WITH PRINT OPTION */}
+      {/* WORKER SCHEDULE REPORT MODAL */}
       {showMyScheduleModal && currentWorker && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-white">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 print:shadow-none print:border-none print:max-w-none print:w-full">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Personal Shift Schedule Report</h3>
-                <p className="text-xs text-slate-500">Assigned shifts for <strong>{currentWorker.name}</strong> ({currentWorker.role})</p>
+                <p className="text-xs text-slate-500">Assigned shifts for <strong>{currentWorker.name}</strong></p>
               </div>
               <button onClick={() => setShowMyScheduleModal(false)} className="text-slate-400 hover:text-slate-600 print:hidden">
                 <X className="w-5 h-5" />
@@ -2568,7 +2648,7 @@ export default function App() {
                           <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
                           <p className="text-[11px] text-slate-500">
                             {s.location} {s.department ? `• ${s.department}` : ''}
-                            {myAssignment && ` • Position: ${s.positionsList?.[myAssignment.slotIndex]?.positionName || currentWorker.role}`}
+                            {myAssignment && ` • Position: ${s.positionsList?.[myAssignment.slotIndex]?.positionName || ''}`}
                           </p>
                         </div>
                         <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2.5 py-1 rounded-full">
