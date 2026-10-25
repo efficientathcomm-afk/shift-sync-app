@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 
 // Firebase Configuration & Initialization
+// Fallback to a working mock configuration if environment config is missing or invalid dummy keys are passed
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
@@ -50,11 +51,18 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 
 let app, auth, db;
 try {
+  // Check if apiKey is dummy
+  if (firebaseConfig.apiKey && firebaseConfig.apiKey.includes("AIzaSyDummyKey")) {
+    throw new Error("Using dummy Firebase API key; switching to local state mode.");
+  }
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
 } catch (e) {
-  console.warn("Firebase initialization fallback:", e);
+  console.warn("Firebase running in local fallback mode:", e.message);
+  app = null;
+  auth = null;
+  db = null;
 }
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'shift-manager-app';
@@ -224,7 +232,7 @@ export default function App() {
     }
   }, []);
 
-  // Sync state with Firestore collections with localStorage fallback
+  // Sync state with Firestore collections if active, with localStorage fallback
   useEffect(() => {
     if (!db) return;
 
@@ -324,7 +332,7 @@ export default function App() {
     }
   };
 
-  // Universal helper saver for DB + LocalStorage fallback
+  // Universal helper saver for LocalStorage + optional Firestore sync
   const persistWorkerUpdate = async (updatedList) => {
     setWorkers(updatedList);
     localStorage.setItem('shiftsync_workers', JSON.stringify(updatedList));
@@ -350,7 +358,7 @@ export default function App() {
         await setDoc(workerRef, editingProfile, { merge: true });
       }
     } catch (err) {
-      console.warn("Save profile cloud error (handled locally):", err);
+      console.warn("Save profile cloud error (saved locally):", err);
     }
   };
 
