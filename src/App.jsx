@@ -2,22 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
-import { 
-  Users, 
-  Calendar, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Plus, 
-  Search, 
-  FileText, 
-  X, 
-  ShieldCheck, 
-  BarChart3, 
+import { 
+  Users, 
+  Calendar, 
+  Clock, 
+  CheckCircle, 
+  XCircle, 
+  AlertCircle, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Plus, 
+  Search, 
+  FileText, 
+  X, 
+  ShieldCheck, 
   ChevronRight,
   UserCheck,
   Building,
@@ -28,12 +27,10 @@ import {
   Check,
   Star,
   Printer,
-  TrendingUp,
   MapPin,
   Briefcase,
   Layers,
   Settings,
-  Info,
   User,
   Trash2,
   Filter
@@ -148,11 +145,11 @@ export default function App() {
   const [newPosDept, setNewPosDept] = useState('');
   const [newPosLoc, setNewPosLoc] = useState('');
 
-  const [newWorker, setNewWorker] = useState({ 
-    name: '', 
-    role: 'Barista', 
-    email: '', 
-    phone: '', 
+  const [newWorker, setNewWorker] = useState({ 
+    name: '', 
+    role: 'Barista', 
+    email: '', 
+    phone: '', 
     pin: '',
     allowedLocation: '',
     allowedDepartment: '',
@@ -439,11 +436,11 @@ export default function App() {
     setSelectedWorkerId(newId);
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
-    setNewWorker({ 
-      name: '', 
-      role: 'Barista', 
-      email: '', 
-      phone: '', 
+    setNewWorker({ 
+      name: '', 
+      role: 'Barista', 
+      email: '', 
+      phone: '', 
       pin: '',
       allowedLocation: '',
       allowedDepartment: '',
@@ -625,14 +622,14 @@ export default function App() {
     ];
 
     const defaultShifts = [
-      { 
-        id: 's_1', 
-        date: SAMPLE_DATES[0], 
-        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
-        location: 'Downtown Hub', 
+      { 
+        id: 's_1', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
+        location: 'Downtown Hub', 
         department: 'Front of House',
-        requiredCount: 2, 
-        idealCount: 3, 
+        requiredCount: 2, 
+        idealCount: 3, 
         positionsList: [
           { positionId: 'p_1', positionName: 'Head Barista', required: true },
           { positionId: 'p_2', positionName: 'Barista', required: true },
@@ -641,22 +638,22 @@ export default function App() {
         assignedPositions: [
           { slotIndex: 0, workerId: 'w_1' }
         ],
-        assignedWorkerIds: ['w_1'] 
+        assignedWorkerIds: ['w_1'] 
       },
-      { 
-        id: 's_2', 
-        date: SAMPLE_DATES[0], 
-        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
-        location: 'Downtown Hub', 
+      { 
+        id: 's_2', 
+        date: SAMPLE_DATES[0], 
+        timeSlot: 'Afternoon (03:00 PM - 11:00 PM)', 
+        location: 'Downtown Hub', 
         department: 'Kitchen / Back of House',
-        requiredCount: 2, 
-        idealCount: 2, 
+        requiredCount: 2, 
+        idealCount: 2, 
         positionsList: [
           { positionId: 'p_4', positionName: 'Line Cook', required: true },
           { positionId: 'p_4', positionName: 'Line Cook', required: true }
         ],
         assignedPositions: [],
-        assignedWorkerIds: [] 
+        assignedWorkerIds: [] 
       }
     ];
 
@@ -680,9 +677,9 @@ export default function App() {
   const searchedWorkers = useMemo(() => {
     if (!searchQuery.trim()) return workers;
     const q = searchQuery.toLowerCase();
-    return workers.filter(w => 
-      w.name.toLowerCase().includes(q) || 
-      w.role.toLowerCase().includes(q) || 
+    return workers.filter(w => 
+      w.name.toLowerCase().includes(q) || 
+      w.role.toLowerCase().includes(q) || 
       w.email.toLowerCase().includes(q)
     );
   }, [workers, searchQuery]);
@@ -806,8 +803,8 @@ export default function App() {
             <button
               onClick={() => setActiveTab('worker')}
               className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'worker' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
+                activeTab === 'worker' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
@@ -817,8 +814,8 @@ export default function App() {
             <button
               onClick={() => setActiveTab('manager')}
               className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'manager' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
+                activeTab === 'manager' 
+                  ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
@@ -936,7 +933,7 @@ export default function App() {
               <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2">
                 <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>
-                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
+                  <strong>Filtered Shift View:</strong> Showing shifts restricted to 
                   {currentWorker.allowedLocation && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Location: {currentWorker.allowedLocation}</span>}
                   {currentWorker.allowedDepartment && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Dept: {currentWorker.allowedDepartment}</span>}
                   {currentWorker.allowedPosition && <span className="ml-1 font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Pos: {currentWorker.allowedPosition}</span>}
@@ -1060,22 +1057,22 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredShifts.map(shift => {
                       const workerStatus = availabilities[currentWorker.id]?.[shift.id] || null;
-                      
+                       
                       // Check if worker is assigned in any position for this shift
                       const assignedSlots = shift.assignedPositions || [];
                       const isAssigned = assignedSlots.some(ap => ap.workerId === currentWorker.id);
-                      
+                       
                       const assignedCount = assignedSlots.length;
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
 
                       return (
-                        <div 
-                          key={shift.id} 
+                        <div 
+                          key={shift.id} 
                           onClick={() => setInspectingShift(shift)}
                           className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md ${
-                            isAssigned 
-                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                            isAssigned 
+                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
                               : 'border-slate-200 hover:border-indigo-300'
                           }`}
                         >
@@ -1131,12 +1128,12 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden flex">
-                                <div 
+                                <div 
                                   className={`h-full transition-all duration-300 ${
-                                    assignedCount < requiredCount 
-                                      ? 'bg-rose-500' 
-                                      : assignedCount < targetCount 
-                                        ? 'bg-amber-400' 
+                                    assignedCount < requiredCount 
+                                      ? 'bg-rose-500' 
+                                      : assignedCount < targetCount 
+                                        ? 'bg-amber-400' 
                                         : 'bg-emerald-500'
                                   }`}
                                   style={{ width: `${Math.min(100, (assignedCount / Math.max(1, targetCount)) * 100)}%` }}
@@ -1151,8 +1148,8 @@ export default function App() {
                           </div>
 
                           {/* WORKER AVAILABILITY SELECTOR */}
-                          <div 
-                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
+                          <div 
+                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
                             onClick={(e) => e.stopPropagation()}
                           >
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
@@ -1441,8 +1438,8 @@ export default function App() {
                                   const assignedWorker = workers.find(w => w.id === assignment?.workerId);
 
                                   return (
-                                    <div 
-                                      key={idx} 
+                                    <div 
+                                      key={idx} 
                                       className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${
                                         assignedWorker
                                           ? 'bg-slate-50 border-slate-300'
@@ -1907,7 +1904,7 @@ export default function App() {
                 <Briefcase className="w-4 h-4 text-indigo-600" />
                 <span>Positions / Job Titles</span>
               </h4>
-              
+               
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                 <input
                   type="text"
@@ -2058,7 +2055,7 @@ export default function App() {
                 <Users className="w-5 h-5 text-indigo-600" />
                 <span>Staff Roster & Access PINs</span>
               </h3>
-              <button 
+              <button 
                 onClick={() => setShowStaffManagementModal(false)}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
