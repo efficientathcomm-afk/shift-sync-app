@@ -64,7 +64,6 @@ try {
   if (firebaseConfig.apiKey && firebaseConfig.apiKey.includes("AIzaSyDummyKey")) {
     throw new Error("Using dummy Firebase API key; switching to local state mode.");
   }
-  app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
 } catch (e) {
