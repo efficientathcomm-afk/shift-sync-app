@@ -1460,219 +1460,123 @@ export default function App() {
       )}
 
       {/* ORGANIZATIONAL SETUP MODAL (LOCATIONS, DEPARTMENTS, POSITIONS) */}
-        {showOrgStructureModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-6 shadow-xl max-h-[85vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Organizational Setup</h3>
-                  <p className="text-xs text-slate-500">Manage, edit, and restrict locations, departments, and position definitions.</p>
-                </div>
-                <button onClick={() => setShowOrgStructureModal(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
-                  <X className="w-5 h-5" />
+      {showOrgStructureModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <Building className="w-5 h-5 text-indigo-600" />
+                <span>Manage Locations, Departments & Positions</span>
+              </h3>
+              <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* LOCATIONS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <MapPin className="w-4 h-4 text-indigo-600" />
+                <span>Locations</span>
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New location name..."
+                  value={newLocName}
+                  onChange={(e) => setNewLocName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLocation}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                >
+                  Add
                 </button>
               </div>
-
-              {/* LOCATIONS SECTION */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Locations</h4>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    placeholder="New location name..."
-                    value={newLocName}
-                    onChange={(e) => setNewLocName(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button onClick={handleAddLocation} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition">
-                    Add Location
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  {locations.map((loc, idx) => (
-                    <div key={idx} className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                      {editingLocIndex === idx ? (
-                        <div className="flex items-center space-x-2 w-full">
-                          <input
-                            type="text"
-                            value={editingLocValue}
-                            onChange={(e) => setEditingLocValue(e.target.value)}
-                            className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium"
-                          />
-                          <button onClick={() => handleUpdateLocation(idx, editingLocValue)} className="text-emerald-600 font-bold hover:underline">Save</button>
-                          <button onClick={() => setEditingLocIndex(null)} className="text-slate-400 hover:underline">Cancel</button>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="font-bold text-slate-800">{loc}</span>
-                          <div className="flex items-center space-x-1">
-                            <button
-                              onClick={() => {
-                                setEditingLocIndex(idx);
-                                setEditingLocValue(loc);
-                              }}
-                              className="p-1 text-slate-400 hover:text-indigo-600 rounded"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDeleteLocation(idx)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {locations.map((loc, i) => (
+                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
+                    {loc}
+                  </span>
+                ))}
               </div>
+            </div>
 
-              {/* DEPARTMENTS SECTION */}
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <h4 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Departments</h4>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    placeholder="New department name..."
-                    value={newDeptName}
-                    onChange={(e) => setNewDeptName(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button onClick={handleAddDepartment} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition">
-                    Add Department
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  {departments.map((dept, idx) => (
-                    <div key={idx} className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                      {editingDeptIndex === idx ? (
-                        <div className="flex items-center space-x-2 w-full">
-                          <input
-                            type="text"
-                            value={editingDeptValue}
-                            onChange={(e) => setEditingDeptValue(e.target.value)}
-                            className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium"
-                          />
-                          <button onClick={() => handleUpdateDepartment(idx, editingDeptValue)} className="text-emerald-600 font-bold hover:underline">Save</button>
-                          <button onClick={() => setEditingDeptIndex(null)} className="text-slate-400 hover:underline">Cancel</button>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="font-bold text-slate-800">{dept}</span>
-                          <div className="flex items-center space-x-1">
-                            <button
-                              onClick={() => {
-                                setEditingDeptIndex(idx);
-                                setEditingDeptValue(dept);
-                              }}
-                              className="p-1 text-slate-400 hover:text-indigo-600 rounded"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDeleteDepartment(idx)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {/* DEPARTMENTS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                <span>Departments</span>
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New department name..."
+                  value={newDeptName}
+                  onChange={(e) => setNewDeptName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddDepartment}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg"
+                >
+                  Add
+                </button>
               </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {departments.map((dept, i) => (
+                  <span key={i} className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-medium text-slate-700">
+                    {dept}
+                  </span>
+                ))}
+              </div>
+            </div>
 
-              {/* POSITIONS SECTION */}
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <h4 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Positions (With Location / Dept Rules)</h4>
-                
-                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <input
-                    type="text"
-                    placeholder="Position Title (e.g. Barista)"
-                    value={newPosName}
-                    onChange={(e) => setNewPosName(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={newPosLoc}
-                      onChange={(e) => setNewPosLoc(e.target.value)}
-                      className="bg-white border border-slate-300 rounded-lg p-2 text-xs font-medium"
-                    >
-                      <option value="">-- Any Location --</option>
-                      {locations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-                    </select>
-
-                    <select
-                      value={newPosDept}
-                      onChange={(e) => setNewPosDept(e.target.value)}
-                      className="bg-white border border-slate-300 rounded-lg p-2 text-xs font-medium"
-                    >
-                      <option value="">-- Any Department --</option>
-                      {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-                    </select>
+            {/* POSITIONS SECTION */}
+            <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
+                <Briefcase className="w-4 h-4 text-indigo-600" />
+                <span>Positions / Job Titles</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Position title..."
+                  value={newPosName}
+                  onChange={(e) => setNewPosName(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                />
+                <select
+                  value={newPosDept}
+                  onChange={(e) => setNewPosDept(e.target.value)}
+                  className="text-xs p-2 bg-white border border-slate-300 rounded-lg col-span-1"
+                >
+                  {departments.map((d, i) => (
+                    <option key={i} value={d}>{d}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddPosition}
+                  className="bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-lg col-span-1"
+                >
+                  Add Position
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                {positions.map((pos) => (
+                  <div key={pos.id} className="p-2 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">{pos.name}</span>
+                      <span className="text-[10px] text-slate-500">{pos.department}</span>
+                    </div>
                   </div>
-                  <button onClick={handleAddPosition} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold p-2 rounded-lg transition">
-                    Add Position Definition
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  {positions.map(p => (
-                    <div key={p.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                      {editingPosition?.id === p.id ? (
-                        <form onSubmit={handleUpdatePosition} className="space-y-2">
-                          <input
-                            type="text"
-                            value={editingPosition.name}
-                            onChange={(e) => setEditingPosition({ ...editingPosition, name: e.target.value })}
-                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-medium"
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <select
-                              value={editingPosition.location || ''}
-                              onChange={(e) => setEditingPosition({ ...editingPosition, location: e.target.value })}
-                              className="bg-white border border-slate-300 rounded p-1 text-xs font-medium"
-                            >
-                              <option value="">-- Any Location --</option>
-                              {locations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-                            </select>
-                            <select
-                              value={editingPosition.department || ''}
-                              onChange={(e) => setEditingPosition({ ...editingPosition, department: e.target.value })}
-                              className="bg-white border border-slate-300 rounded p-1 text-xs font-medium"
-                            >
-                              <option value="">-- Any Department --</option>
-                              {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-                            </select>
-                          </div>
-                          <div className="flex justify-end space-x-2 pt-1">
-                            <button type="button" onClick={() => setEditingPosition(null)} className="text-slate-400 hover:underline">Cancel</button>
-                            <button type="submit" className="text-indigo-600 font-bold hover:underline">Save</button>
-                          </div>
-                        </form>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-bold text-slate-800">{p.name}</span>
-                            <div className="flex space-x-2 text-[10px] text-slate-500">
-                              <span>Loc: {p.location || 'Any'}</span>
-                              <span>•</span>
-                              <span>Dept: {p.department || 'Any'}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <button onClick={() => setEditingPosition(p)} className="p-1 text-slate-400 hover:text-indigo-600 rounded">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDeletePosition(p.id)} className="p-1 text-slate-400 hover:text-rose-600 rounded">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
+            </div>
 
             <div className="pt-2 flex justify-end">
               <button
@@ -1680,7 +1584,7 @@ export default function App() {
                 onClick={() => setShowOrgStructureModal(false)}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
               >
-                Done Setup
+                Done
               </button>
             </div>
           </div>
