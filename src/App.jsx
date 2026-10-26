@@ -47,9 +47,18 @@ const firebaseConfig = {
   measurementId: "G-6TN9QYYN83"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.warn("Firebase initialization warning:", e.message);
+  app = null;
+  auth = null;
+  db = null;
+}
+
 const appId = 'shift-manager-app';
 
 // Helper function to generate upcoming dates (next 7 days starting today)
@@ -120,11 +129,19 @@ export default function App() {
   const [showStaffManagementModal, setShowStaffManagementModal] = useState(false);
   const [showOrgStructureModal, setShowOrgStructureModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showMasterReportModal, setShowMasterReportModal] = useState(false);
   const [showArchivedShifts, setShowArchivedShifts] = useState(false);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [editingWorkerPinId, setEditingWorkerPinId] = useState(null);
   const [tempWorkerPin, setTempWorkerPin] = useState('');
   const [showPinsInDirectory, setShowPinsInDirectory] = useState(false);
+
+  // Master Report Filter States
+  const [reportFilterLocation, setReportFilterLocation] = useState('ALL');
+  const [reportFilterDepartment, setReportFilterDepartment] = useState('ALL');
+  const [reportFilterPosition, setReportFilterPosition] = useState('ALL');
+  const [reportFilterStartDate, setReportFilterStartDate] = useState(SAMPLE_DATES[0]);
+  const [reportFilterEndDate, setReportFilterEndDate] = useState(SAMPLE_DATES[SAMPLE_DATES.length - 1]);
 
   // Shift Detail Modal state for workers
   const [inspectingShift, setInspectingShift] = useState(null);
@@ -165,7 +182,7 @@ export default function App() {
 
   const [editingShift, setEditingShift] = useState(null);
 
-  // Print function for Worker Schedule Report
+  // Print function for Reports & Schedules
   const handlePrintSchedule = () => {
     window.print();
   };
@@ -211,7 +228,6 @@ export default function App() {
       if (localLocs) setLocations(JSON.parse(localLocs));
       if (localDepts) setDepartments(JSON.parse(localDepts));
       if (localPoss) {
-        // Migrate old position format (single department/location strings) to arrays if needed
         const parsedPoss = JSON.parse(localPoss).map(p => ({
           ...p,
           departments: p.departments || (p.department ? [p.department] : []),
@@ -294,7 +310,6 @@ export default function App() {
     return workers.find(w => w.id === selectedWorkerId) || null;
   }, [workers, selectedWorkerId]);
 
-  // Keep selected worker ID updated
   useEffect(() => {
     if (workers.length > 0 && (!selectedWorkerId || !workers.some(w => w.id === selectedWorkerId))) {
       setSelectedWorkerId(workers[0].id);
@@ -353,7 +368,7 @@ export default function App() {
         await setDoc(workerRef, editingProfile, { merge: true });
       }
     } catch (err) {
-      console.warn("Save profile cloud error (saved locally):", err);
+      console.warn("Save profile cloud error:", err);
     }
   };
 
@@ -733,7 +748,6 @@ export default function App() {
     );
   }, [workers, searchQuery]);
 
-  // Filter shifts based on date selection filter and worker restrictions (for worker view)
   const filteredShifts = useMemo(() => {
     let list = shifts;
 
@@ -760,7 +774,6 @@ export default function App() {
     return list.filter(s => s.date === selectedDateFilter);
   }, [shifts, selectedDateFilter, showArchivedShifts, activeTab, currentWorker]);
 
-  // Filter available positions when building/editing a shift based on selected Location & Department
   const filteredPositionsForShift = useMemo(() => {
     return positions.filter(p => {
       const posLocs = p.locations || [];
@@ -979,7 +992,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* WORKER RESTRICTION BADGES */}
             {currentWorker && ((currentWorker.allowedLocations || []).length > 0 || (currentWorker.allowedDepartments || []).length > 0 || (currentWorker.allowedPositions || []).length > 0) && (
               <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2 flex-wrap gap-1">
                 <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -996,7 +1008,6 @@ export default function App() {
               </div>
             )}
 
-            {/* DATE FILTER PILLS */}
             <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
               <button
                 onClick={() => setSelectedDateFilter('ALL')}
@@ -1270,6 +1281,13 @@ export default function App() {
                     <span>Seed Sample Data</span>
                   </button>
                   <button
+                    onClick={() => setShowMasterReportModal(true)}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center space-x-1.5 border border-emerald-300"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-600" />
+                    <span>Master Printable Report</span>
+                  </button>
+                  <button
                     onClick={() => setShowOrgStructureModal(true)}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center space-x-1.5 border border-slate-300"
                   >
@@ -1417,6 +1435,9 @@ export default function App() {
                       const requiredCount = shift.requiredCount || 0;
                       const targetCount = shift.idealCount || requiredCount;
 
+                      // Helper to check if a worker is already assigned to ANY slot in this shift
+                      const isWorkerAssignedInShift = (wId) => assignedPositions.some(ap => ap.workerId === wId);
+
                       return (
                         <div key={shift.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1470,7 +1491,7 @@ export default function App() {
 
                           <div>
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
-                              Position Slots & Worker Scheduling
+                              Simplified Position Slots & Staff Assignment
                             </span>
 
                             {(!shift.positionsList || shift.positionsList.length === 0) ? (
@@ -1483,54 +1504,158 @@ export default function App() {
                                   const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
                                   const assignedWorker = workers.find(w => w.id === assignment?.workerId);
 
+                                  // Group workers by their response status for this shift
+                                  const preferredWorkers = [];
+                                  const availableWorkers = [];
+                                  const noResponseWorkers = [];
+                                  const unavailableWorkers = [];
+
+                                  workers.forEach(w => {
+                                    const pref = availabilities[w.id]?.[shift.id];
+                                    if (pref === 'preferred') preferredWorkers.push(w);
+                                    else if (pref === 'available') availableWorkers.push(w);
+                                    else if (pref === 'unavailable') unavailableWorkers.push(w);
+                                    else noResponseWorkers.push(w);
+                                  });
+
                                   return (
                                     <div 
                                       key={idx} 
-                                      className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 ${
+                                      className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 ${
                                         assignedWorker
                                           ? 'bg-slate-50 border-slate-300'
                                           : posSlot.required
-                                            ? 'bg-rose-50/60 border-rose-200'
-                                            : 'bg-amber-50/60 border-amber-200'
+                                            ? 'bg-rose-50/40 border-rose-200'
+                                            : 'bg-amber-50/40 border-amber-200'
                                       }`}
                                     >
                                       <div className="flex items-center justify-between">
                                         <div className="flex items-center space-x-1.5">
-                                          <Briefcase className="w-3.5 h-3.5 text-slate-500" />
-                                          <span className="text-xs font-bold text-slate-800">{posSlot.positionName}</span>
+                                          <Briefcase className="w-4 h-4 text-slate-600" />
+                                          <span className="text-xs font-black text-slate-900">{posSlot.positionName}</span>
                                         </div>
                                         {posSlot.required ? (
                                           <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
-                                            Required Slot
+                                            Required
                                           </span>
                                         ) : (
                                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                                            Optional Slot
+                                            Optional
                                           </span>
                                         )}
                                       </div>
 
-                                      <div className="flex items-center gap-2">
-                                        <select
-                                          value={assignment?.workerId || ''}
-                                          onChange={(e) => handleAssignWorkerToPosition(shift.id, idx, e.target.value)}
-                                          className="text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium w-full focus:ring-2 focus:ring-indigo-500"
-                                        >
-                                          <option value="">-- Unassigned (Open) --</option>
-                                          {workers.map(w => {
-                                            const pref = availabilities[w.id]?.[shift.id];
-                                            let badge = '';
-                                            if (pref === 'preferred') badge = ' ⭐ (Preferred)';
-                                            if (pref === 'available') badge = ' ✓ (Available)';
-                                            if (pref === 'unavailable') badge = ' ✕ (Unavailable)';
-                                            return (
-                                              <option key={w.id} value={w.id}>
-                                                {w.name}{badge}
-                                              </option>
-                                            );
-                                          })}
-                                        </select>
-                                      </div>
+                                      {/* Assigned State or Quick-Assign Buttons */}
+                                      {assignedWorker ? (
+                                        <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-300 shadow-sm">
+                                          <div className="flex items-center space-x-2">
+                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">
+                                              ✓
+                                            </div>
+                                            <div>
+                                              <span className="text-xs font-bold text-slate-900 block">{assignedWorker.name}</span>
+                                              <span className="text-[10px] text-slate-400">Assigned</span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleAssignWorkerToPosition(shift.id, idx, '')}
+                                            className="text-xs text-rose-600 font-bold hover:underline px-2 py-1 bg-rose-50 rounded-lg"
+                                          >
+                                            Unassign
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                                            Click available staff to assign:
+                                          </span>
+
+                                          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                                            {/* Preferred Group */}
+                                            {preferredWorkers.map(w => {
+                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              return (
+                                                <button
+                                                  key={w.id}
+                                                  type="button"
+                                                  disabled={alreadyInShift}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                    alreadyInShift
+                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                      : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                  }`}
+                                                  title={alreadyInShift ? 'Already assigned to another slot in this shift' : 'Click to assign (Preferred)'}
+                                                >
+                                                  <Star className="w-3 h-3 fill-current text-amber-500" />
+                                                  <span>{formatShortName(w.name)}</span>
+                                                </button>
+                                              );
+                                            })}
+
+                                            {/* Available Group */}
+                                            {availableWorkers.map(w => {
+                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              return (
+                                                <button
+                                                  key={w.id}
+                                                  type="button"
+                                                  disabled={alreadyInShift}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                    alreadyInShift
+                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                      : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
+                                                  }`}
+                                                  title={alreadyInShift ? 'Already assigned to another slot in this shift' : 'Click to assign (Available)'}
+                                                >
+                                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                                  <span>{formatShortName(w.name)}</span>
+                                                </button>
+                                              );
+                                            })}
+
+                                            {/* No Response Group */}
+                                            {noResponseWorkers.map(w => {
+                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              return (
+                                                <button
+                                                  key={w.id}
+                                                  type="button"
+                                                  disabled={alreadyInShift}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                    alreadyInShift
+                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-sm'
+                                                  }`}
+                                                  title={alreadyInShift ? 'Already assigned' : 'Click to assign (No Response)'}
+                                                >
+                                                  <span>{formatShortName(w.name)}</span>
+                                                </button>
+                                              );
+                                            })}
+
+                                            {/* Unavailable Group (Muted / Warning) */}
+                                            {unavailableWorkers.map(w => {
+                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              return (
+                                                <button
+                                                  key={w.id}
+                                                  type="button"
+                                                  disabled={alreadyInShift}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  className="text-[10px] font-semibold px-2 py-1 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 opacity-75"
+                                                  title="Marked Unavailable - Click to override & assign"
+                                                >
+                                                  ✕ {formatShortName(w.name)}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1547,6 +1672,191 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* MASTER PRINTABLE REPORT MODAL */}
+      {showMasterReportModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-white">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-xl border border-slate-200 space-y-6 max-h-[90vh] overflow-y-auto print:shadow-none print:border-none print:max-w-none print:w-full print:max-h-none print:overflow-visible">
+            
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 print:hidden">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-indigo-600 rounded-xl text-white">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Master Printable Report</h3>
+                  <p className="text-xs text-slate-500">Filter and generate customized master shift reports for printing or export.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowMasterReportModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* REPORT FILTER CONTROLS (Hidden during print) */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 print:hidden">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={reportFilterStartDate}
+                  onChange={(e) => setReportFilterStartDate(e.target.value)}
+                  className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={reportFilterEndDate}
+                  onChange={(e) => setReportFilterEndDate(e.target.value)}
+                  className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Venue / Location</label>
+                <select
+                  value={reportFilterLocation}
+                  onChange={(e) => setReportFilterLocation(e.target.value)}
+                  className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
+                >
+                  <option value="ALL">All Venues</option>
+                  {locations.map((loc, i) => (
+                    <option key={i} value={loc}>{loc}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport / Department</label>
+                <select
+                  value={reportFilterDepartment}
+                  onChange={(e) => setReportFilterDepartment(e.target.value)}
+                  className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
+                >
+                  <option value="ALL">All Sports</option>
+                  {departments.map((dept, i) => (
+                    <option key={i} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Position / Role</label>
+                <select
+                  value={reportFilterPosition}
+                  onChange={(e) => setReportFilterPosition(e.target.value)}
+                  className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
+                >
+                  <option value="ALL">All Positions</option>
+                  {positions.map((pos) => (
+                    <option key={pos.id} value={pos.name}>{pos.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* REPORT PRINT HEADER */}
+            <div className="hidden print:block text-center pb-4 border-b border-slate-300 space-y-1">
+              <h1 className="text-xl font-black text-slate-900">ShiftSync Pro - Master Schedule Report</h1>
+              <p className="text-xs text-slate-600">
+                Period: {reportFilterStartDate} to {reportFilterEndDate} | 
+                Venue: {reportFilterLocation} | Sport: {reportFilterDepartment} | Position: {reportFilterPosition}
+              </p>
+            </div>
+
+            {/* REPORT RESULTS LIST */}
+            <div className="space-y-4">
+              {shifts
+                .filter(s => {
+                  if (reportFilterStartDate && s.date < reportFilterStartDate) return false;
+                  if (reportFilterEndDate && s.date > reportFilterEndDate) return false;
+                  if (reportFilterLocation !== 'ALL' && s.location !== reportFilterLocation) return false;
+                  if (reportFilterDepartment !== 'ALL' && s.department !== reportFilterDepartment) return false;
+                  if (reportFilterPosition !== 'ALL') {
+                    const hasPos = (s.positionsList || []).some(p => p.positionName === reportFilterPosition);
+                    if (!hasPos) return false;
+                  }
+                  return true;
+                })
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs">
+                    No shifts match the selected report filter criteria.
+                  </div>
+                ) : (
+                  shifts
+                    .filter(s => {
+                      if (reportFilterStartDate && s.date < reportFilterStartDate) return false;
+                      if (reportFilterEndDate && s.date > reportFilterEndDate) return false;
+                      if (reportFilterLocation !== 'ALL' && s.location !== reportFilterLocation) return false;
+                      if (reportFilterDepartment !== 'ALL' && s.department !== reportFilterDepartment) return false;
+                      if (reportFilterPosition !== 'ALL') {
+                        const hasPos = (s.positionsList || []).some(p => p.positionName === reportFilterPosition);
+                        if (!hasPos) return false;
+                      }
+                      return true;
+                    })
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .map(shift => (
+                      <div key={shift.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 print:border-slate-300 print:bg-white">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                          <div>
+                            <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded mr-2">
+                              {shift.date}
+                            </span>
+                            <span className="text-xs font-bold text-slate-900">{shift.timeSlot}</span>
+                          </div>
+                          <span className="text-xs text-slate-600 font-medium">
+                            {shift.location} {shift.department ? `• ${shift.department}` : ''}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                          {(shift.positionsList || []).map((posSlot, idx) => {
+                            if (reportFilterPosition !== 'ALL' && posSlot.positionName !== reportFilterPosition) return null;
+                            const assignment = (shift.assignedPositions || []).find(ap => ap.slotIndex === idx);
+                            const assignedWorker = workers.find(w => w.id === assignment?.workerId);
+
+                            return (
+                              <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                <span className="font-bold text-slate-700">{posSlot.positionName}</span>
+                                <span className={`font-semibold px-2 py-0.5 rounded ${
+                                  assignedWorker ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                                }`}>
+                                  {assignedWorker ? assignedWorker.name : 'Unassigned'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                )}
+            </div>
+
+            <div className="pt-4 flex justify-between items-center print:hidden border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handlePrintSchedule}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center space-x-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Master Report</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMasterReportModal(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
+              >
+                Close Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* INSPECT SHIFT POPUP MODAL */}
       {inspectingShift && (
@@ -1694,9 +2004,8 @@ export default function App() {
                     Select multiple venues, sports, or positions. Leave all unchecked for unrestricted access.
                   </p>
 
-                  {/* Locations Checkboxes */}
                   <div>
-                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Venues / Locations</span>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
                       {locations.map((loc, i) => {
                         const currentAllowed = editingProfile.allowedLocations || [];
@@ -1721,9 +2030,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Departments Checkboxes */}
                   <div>
-                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Sports / Departments</span>
+                    <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
                       {departments.map((dept, i) => {
                         const currentAllowed = editingProfile.allowedDepartments || [];
@@ -1748,7 +2056,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Positions Checkboxes */}
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Positions</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
@@ -2306,7 +2613,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD WORKER MODAL (NO PRIMARY POSITION, MULTI-SELECT RESTRICTIONS) */}
+      {/* ADD WORKER MODAL (MULTI-SELECT RESTRICTIONS) */}
       {showAddWorkerModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2368,7 +2675,6 @@ export default function App() {
               <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-3">
                 <span className="text-xs font-bold text-indigo-900 block">Applicable Restrictions</span>
                 
-                {/* Locations */}
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
@@ -2391,7 +2697,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Departments */}
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
@@ -2414,7 +2719,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Positions */}
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Allowed Positions</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
