@@ -93,6 +93,20 @@ export default function App() {
   const [shifts, setShifts] = useState([]);
   const [availabilities, setAvailabilities] = useState({});
 
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  // Splits '2026-10-26' safely avoiding timezone shifts
+  const [year, month, day] = dateString.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day);
+  
+  // Format as: "Mon, Oct 26, 2026" or "October 26, 2026"
+  return dateObj.toLocaleDateString('en-US', {
+    month: 'short', 
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
   // Organizational Management State (Locations, Departments, Positions with Colors)
   const [locations, setLocations] = useState([
     { name: 'Main Branch', color: '#4f46e5' },
@@ -1297,7 +1311,7 @@ export default function App() {
                           >
                             <div className="flex items-start justify-between">
                               <span className="text-xs font-bold bg-white/20 text-white px-2.5 py-1 rounded-lg">
-                                {shift.date}
+                                {formatDate(shift.date)}
                               </span>
                               {isAssigned && (
                                 <span className="text-[11px] font-extrabold bg-white text-slate-900 px-2.5 py-1 rounded-full flex items-center space-x-1 shadow">
@@ -1612,7 +1626,7 @@ export default function App() {
                           >
                             <div className="flex items-center space-x-3">
                               <span className="text-xs font-black bg-white/20 text-white px-3 py-1 rounded-xl">
-                                {shift.date}
+                                {formatDate(shift.date)}
                               </span>
                               <h3 className="font-bold text-white text-sm flex items-center space-x-1.5">
                                 <Clock className="w-4 h-4 text-white/90" />
@@ -2019,7 +2033,7 @@ export default function App() {
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                           <div>
                             <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded mr-2">
-                              {shift.date}
+                              {formatDate(shift.date)}
                             </span>
                             <span className="text-xs font-bold text-slate-900">{shift.timeSlot}</span>
                           </div>
