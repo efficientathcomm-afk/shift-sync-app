@@ -33,7 +33,10 @@ import {
   Settings,
   User,
   Trash2,
-  Filter
+  Filter,
+  AlertTriangle,
+  Info,
+  Bell
 } from 'lucide-react';
 
 // Exact Firebase project configuration
@@ -90,9 +93,17 @@ export default function App() {
   const [shifts, setShifts] = useState([]);
   const [availabilities, setAvailabilities] = useState({});
 
-  // Organizational Management State (Locations, Departments, Positions)
-  const [locations, setLocations] = useState(['Main Branch', 'Downtown Hub', 'Uptown Express']);
-  const [departments, setDepartments] = useState(['Front of House', 'Kitchen / Back of House', 'Management']);
+  // Organizational Management State (Locations, Departments, Positions with Colors)
+  const [locations, setLocations] = useState([
+    { name: 'Main Branch', color: '#4f46e5' },
+    { name: 'Downtown Hub', color: '#0ea5e9' },
+    { name: 'Uptown Express', color: '#10b981' }
+  ]);
+  const [departments, setDepartments] = useState([
+    { name: 'Front of House', color: '#6366f1' },
+    { name: 'Kitchen / Back of House', color: '#f59e0b' },
+    { name: 'Management', color: '#8b5cf6' }
+  ]);
   const [positions, setPositions] = useState([
     { id: 'p_1', name: 'Head Barista', departments: ['Front of House'], locations: [] },
     { id: 'p_2', name: 'Barista', departments: ['Front of House'], locations: [] },
@@ -100,12 +111,20 @@ export default function App() {
     { id: 'p_4', name: 'Line Cook', departments: ['Kitchen / Back of House'], locations: [] }
   ]);
 
+  // Global Manager Notification Banner state
+  const [activeNotification, setActiveNotification] = useState(null); // { type: 'alert'|'message', text: '' }
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [newNotifType, setNewNotifType] = useState('message');
+  const [newNotifText, setNewNotifText] = useState('');
+
   // Editing state for Org Setup
   const [editingLocIndex, setEditingLocIndex] = useState(null);
   const [editLocName, setEditLocName] = useState('');
+  const [editLocColor, setEditLocColor] = useState('#4f46e5');
 
   const [editingDeptIndex, setEditingDeptIndex] = useState(null);
   const [editDeptName, setEditDeptName] = useState('');
+  const [editDeptColor, setEditDeptColor] = useState('#6366f1');
 
   const [editingPosId, setEditingPosId] = useState(null);
   const [editPosName, setEditPosName] = useState('');
@@ -136,13 +155,6 @@ export default function App() {
   const [tempWorkerPin, setTempWorkerPin] = useState('');
   const [showPinsInDirectory, setShowPinsInDirectory] = useState(false);
 
-  // Master Report Filter States
-  const [reportFilterLocation, setReportFilterLocation] = useState('ALL');
-  const [reportFilterDepartment, setReportFilterDepartment] = useState('ALL');
-  const [reportFilterPosition, setReportFilterPosition] = useState('ALL');
-  const [reportFilterStartDate, setReportFilterStartDate] = useState(SAMPLE_DATES[0]);
-  const [reportFilterEndDate, setReportFilterEndDate] = useState(SAMPLE_DATES[SAMPLE_DATES.length - 1]);
-
   // Shift Detail Modal state for workers
   const [inspectingShift, setInspectingShift] = useState(null);
 
@@ -151,12 +163,14 @@ export default function App() {
   const [showAddShiftModal, setShowAddShiftModal] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
 
-  // Profile being edited (either by manager or self)
+  // Profile being edited
   const [editingProfile, setEditingProfile] = useState(null);
 
   // New location/department/position form inputs
   const [newLocName, setNewLocName] = useState('');
+  const [newLocColor, setNewLocColor] = useState('#4f46e5');
   const [newDeptName, setNewDeptName] = useState('');
+  const [newDeptColor, setNewDeptColor] = useState('#6366f1');
   const [newPosName, setNewPosName] = useState('');
   const [newPosDepts, setNewPosDepts] = useState([]);
   const [newPosLocs, setNewPosLocs] = useState([]);
@@ -177,12 +191,18 @@ export default function App() {
     timeSlot: 'Morning (08:00 AM - 04:00 PM)',
     location: 'Main Branch',
     department: 'Front of House',
-    positionsList: [] // array of { positionId, positionName, required: boolean }
+    positionsList: [] 
   });
 
   const [editingShift, setEditingShift] = useState(null);
 
-  // Print function for Reports & Schedules
+  // Master Report Filter States
+  const [reportFilterLocation, setReportFilterLocation] = useState('ALL');
+  const [reportFilterDepartment, setReportFilterDepartment] = useState('ALL');
+  const [reportFilterPosition, setReportFilterPosition] = useState('ALL');
+  const [reportFilterStartDate, setReportFilterStartDate] = useState(SAMPLE_DATES[0]);
+  const [reportFilterEndDate, setReportFilterEndDate] = useState(SAMPLE_DATES[SAMPLE_DATES.length - 1]);
+
   const handlePrintSchedule = () => {
     window.print();
   };
@@ -212,7 +232,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Load from localStorage on mount as instant primary state or fallback
+  // Load from localStorage on mount
   useEffect(() => {
     try {
       const localWorkers = localStorage.getItem('shiftsync_workers');
@@ -221,12 +241,21 @@ export default function App() {
       const localLocs = localStorage.getItem('shiftsync_locs');
       const localDepts = localStorage.getItem('shiftsync_depts');
       const localPoss = localStorage.getItem('shiftsync_poss');
+      const localNotif = localStorage.getItem('shiftsync_notif');
 
       if (localWorkers) setWorkers(JSON.parse(localWorkers));
       if (localShifts) setShifts(JSON.parse(localShifts));
       if (localAvail) setAvailabilities(JSON.parse(localAvail));
-      if (localLocs) setLocations(JSON.parse(localLocs));
-      if (localDepts) setDepartments(JSON.parse(localDepts));
+      if (localNotif) setActiveNotification(JSON.parse(localNotif));
+
+      if (localLocs) {
+        const parsedLocs = JSON.parse(localLocs).map(l => typeof l === 'string' ? { name: l, color: '#4f46e5' } : l);
+        setLocations(parsedLocs);
+      }
+      if (localDepts) {
+        const parsedDepts = JSON.parse(localDepts).map(d => typeof d === 'string' ? { name: d, color: '#6366f1' } : d);
+        setDepartments(parsedDepts);
+      }
       if (localPoss) {
         const parsedPoss = JSON.parse(localPoss).map(p => ({
           ...p,
@@ -240,7 +269,7 @@ export default function App() {
     }
   }, []);
 
-  // Sync state with Firestore collections if active, with localStorage fallback
+  // Sync state with Firestore collections if active
   useEffect(() => {
     if (!db) return;
 
@@ -279,12 +308,14 @@ export default function App() {
     const unsubOrg = onSnapshot(orgCol, (snapshot) => {
       snapshot.docs.forEach(doc => {
         if (doc.id === 'locations' && doc.data().list) {
-          setLocations(doc.data().list);
-          localStorage.setItem('shiftsync_locs', JSON.stringify(doc.data().list));
+          const parsed = doc.data().list.map(l => typeof l === 'string' ? { name: l, color: '#4f46e5' } : l);
+          setLocations(parsed);
+          localStorage.setItem('shiftsync_locs', JSON.stringify(parsed));
         }
         if (doc.id === 'departments' && doc.data().list) {
-          setDepartments(doc.data().list);
-          localStorage.setItem('shiftsync_depts', JSON.stringify(doc.data().list));
+          const parsed = doc.data().list.map(d => typeof d === 'string' ? { name: d, color: '#6366f1' } : d);
+          setDepartments(parsed);
+          localStorage.setItem('shiftsync_depts', JSON.stringify(parsed));
         }
         if (doc.id === 'positions' && doc.data().list) {
           const parsed = doc.data().list.map(p => ({
@@ -294,6 +325,10 @@ export default function App() {
           }));
           setPositions(parsed);
           localStorage.setItem('shiftsync_poss', JSON.stringify(parsed));
+        }
+        if (doc.id === 'announcement') {
+          setActiveNotification(doc.data().notification || null);
+          localStorage.setItem('shiftsync_notif', JSON.stringify(doc.data().notification || null));
         }
       });
     }, (error) => console.warn("Org fetch warning:", error));
@@ -315,6 +350,29 @@ export default function App() {
       setSelectedWorkerId(workers[0].id);
     }
   }, [workers, selectedWorkerId]);
+
+  // Check if current worker has a shift scheduled today
+  const todayDateString = SAMPLE_DATES[0]; // 'Today' date string YYYY-MM-DD
+  const workerShiftToday = useMemo(() => {
+    if (!currentWorker) return null;
+    return shifts.find(s => {
+      if (s.date !== todayDateString) return false;
+      const assigned = s.assignedPositions || [];
+      const match = assigned.find(ap => ap.workerId === currentWorker.id);
+      return !!match;
+    }) || null;
+  }, [shifts, currentWorker, todayDateString]);
+
+  const workerShiftTodayDetails = useMemo(() => {
+    if (!workerShiftToday || !currentWorker) return null;
+    const match = (workerShiftToday.assignedPositions || []).find(ap => ap.workerId === currentWorker.id);
+    const posName = match ? (workerShiftToday.positionsList?.[match.slotIndex]?.positionName || 'Scheduled Role') : 'Scheduled Role';
+    return {
+      position: posName,
+      location: workerShiftToday.location,
+      time: workerShiftToday.timeSlot
+    };
+  }, [workerShiftToday, currentWorker]);
 
   const handleWorkerChange = (newWorkerId) => {
     setSelectedWorkerId(newWorkerId);
@@ -354,6 +412,44 @@ export default function App() {
     localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedList));
   };
 
+  // Helper to get location color
+  const getLocationColor = (locName) => {
+    const locObj = locations.find(l => l.name === locName);
+    return locObj?.color || '#4f46e5';
+  };
+
+  // Helper to get department color
+  const getDepartmentColor = (deptName) => {
+    const deptObj = departments.find(d => d.name === deptName);
+    return deptObj?.color || '#6366f1';
+  };
+
+  // Publish / Clear Notification Banner
+  const handlePublishNotification = async (e) => {
+    e.preventDefault();
+    const notifObj = newNotifText.trim() ? { type: newNotifType, text: newNotifText.trim() } : null;
+    setActiveNotification(notifObj);
+    localStorage.setItem('shiftsync_notif', JSON.stringify(notifObj));
+    setShowNotificationModal(false);
+    setNewNotifText('');
+
+    try {
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'announcement'), { notification: notifObj });
+      }
+    } catch (e) { console.warn(e); }
+  };
+
+  const handleClearNotification = async () => {
+    setActiveNotification(null);
+    localStorage.removeItem('shiftsync_notif');
+    try {
+      if (db) {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'org_structure', 'announcement'), { notification: null });
+      }
+    } catch (e) { console.warn(e); }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!editingProfile || !editingProfile.name.trim()) return;
@@ -374,10 +470,11 @@ export default function App() {
 
   // Org Structure Handlers
   const handleAddLocation = async () => {
-    if (!newLocName.trim() || locations.includes(newLocName.trim())) return;
-    const updated = [...locations, newLocName.trim()];
+    if (!newLocName.trim() || locations.some(l => l.name === newLocName.trim())) return;
+    const updated = [...locations, { name: newLocName.trim(), color: newLocColor }];
     setLocations(updated);
     setNewLocName('');
+    setNewLocColor('#4f46e5');
     localStorage.setItem('shiftsync_locs', JSON.stringify(updated));
     try {
       if (db) {
@@ -389,7 +486,7 @@ export default function App() {
   const handleSaveEditLocation = async (index) => {
     if (!editLocName.trim()) return;
     const updated = [...locations];
-    updated[index] = editLocName.trim();
+    updated[index] = { name: editLocName.trim(), color: editLocColor };
     setLocations(updated);
     setEditingLocIndex(null);
     setEditLocName('');
@@ -413,10 +510,11 @@ export default function App() {
   };
 
   const handleAddDepartment = async () => {
-    if (!newDeptName.trim() || departments.includes(newDeptName.trim())) return;
-    const updated = [...departments, newDeptName.trim()];
+    if (!newDeptName.trim() || departments.some(d => d.name === newDeptName.trim())) return;
+    const updated = [...departments, { name: newDeptName.trim(), color: newDeptColor }];
     setDepartments(updated);
     setNewDeptName('');
+    setNewDeptColor('#6366f1');
     localStorage.setItem('shiftsync_depts', JSON.stringify(updated));
     try {
       if (db) {
@@ -428,7 +526,7 @@ export default function App() {
   const handleSaveEditDepartment = async (index) => {
     if (!editDeptName.trim()) return;
     const updated = [...departments];
-    updated[index] = editDeptName.trim();
+    updated[index] = { name: editDeptName.trim(), color: editDeptColor };
     setDepartments(updated);
     setEditingDeptIndex(null);
     setEditDeptName('');
@@ -621,7 +719,7 @@ export default function App() {
       date: newShift.date,
       timeSlot: newShift.timeSlot,
       location: newShift.location,
-      department: newShift.department || departments[0] || 'General',
+      department: newShift.department || departments[0]?.name || 'General',
       requiredCount: reqCount,
       idealCount: targCount,
       positionsList: newShift.positionsList,
@@ -642,8 +740,8 @@ export default function App() {
     setNewShift({
       date: SAMPLE_DATES[0],
       timeSlot: 'Morning (08:00 AM - 04:00 PM)',
-      location: locations[0] || 'Main Branch',
-      department: departments[0] || 'Front of House',
+      location: locations[0]?.name || 'Main Branch',
+      department: departments[0]?.name || 'Front of House',
       positionsList: []
     });
 
@@ -847,6 +945,9 @@ export default function App() {
     });
   };
 
+  const locationNames = locations.map(l => l.name);
+  const departmentNames = departments.map(d => d.name);
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans antialiased pb-12 print:bg-white print:pb-0">
       {/* HEADER NAVBAR */}
@@ -938,6 +1039,58 @@ export default function App() {
         {/* WORKER VIEW TAB */}
         {activeTab === 'worker' && (
           <div className="space-y-6 print:hidden">
+
+            {/* MANAGER BROADCAST NOTIFICATION BANNER (IF ACTIVE) */}
+            {activeNotification && (
+              <div className={`p-4 rounded-2xl border shadow-sm flex items-start justify-between gap-3 ${
+                activeNotification.type === 'alert'
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}>
+                <div className="flex items-start space-x-3">
+                  {activeNotification.type === 'alert' ? (
+                    <div className="w-7 h-7 bg-rose-600 text-white rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-inner">
+                      !
+                    </div>
+                  ) : (
+                    <div className="w-7 h-7 bg-amber-500 text-white rounded-full flex items-center justify-center font-black text-xs shrink-0 shadow-inner">
+                      !
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider">
+                      {activeNotification.type === 'alert' ? 'Manager Alert' : 'Manager Notice'}
+                    </h4>
+                    <p className="text-xs font-medium mt-0.5">{activeNotification.text}</p>
+                  </div>
+                </div>
+
+                {isManagerAuthenticated && (
+                  <button
+                    onClick={handleClearNotification}
+                    className="text-xs font-bold opacity-70 hover:opacity-100 underline shrink-0"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* WORKER SHIFT TODAY ALERT BANNER */}
+            {currentWorker && isWorkerAuthenticated && workerShiftTodayDetails && (
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl p-4 shadow-md flex items-center space-x-3.5">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-blue-200">Today's Active Assignment</h3>
+                  <p className="text-xs font-bold mt-0.5">
+                    You have a shift scheduled today! You are scheduled for <strong>{workerShiftTodayDetails.position}</strong> at <strong>{workerShiftTodayDetails.location}</strong> ({workerShiftTodayDetails.time}).
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Worker Portal</span>
@@ -1129,47 +1282,52 @@ export default function App() {
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
 
+                      const locColor = getLocationColor(shift.location);
+
                       return (
                         <div 
                           key={shift.id} 
                           onClick={() => setInspectingShift(shift)}
-                          className={`bg-white rounded-2xl p-5 border shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md ${
-                            isAssigned 
-                              ? 'border-indigo-400 ring-2 ring-indigo-200' 
-                              : 'border-slate-200 hover:border-indigo-300'
-                          }`}
+                          className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md overflow-hidden"
                         >
-                          <div className="space-y-3">
+                          {/* TOP HALF COLOR CODED BY LOCATION */}
+                          <div 
+                            className="p-5 text-white space-y-3"
+                            style={{ backgroundColor: locColor }}
+                          >
                             <div className="flex items-start justify-between">
-                              <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
+                              <span className="text-xs font-bold bg-white/20 text-white px-2.5 py-1 rounded-lg">
                                 {shift.date}
                               </span>
                               {isAssigned && (
-                                <span className="text-[11px] font-extrabold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full flex items-center space-x-1">
-                                  <CheckCircle className="w-3 h-3" />
+                                <span className="text-[11px] font-extrabold bg-white text-slate-900 px-2.5 py-1 rounded-full flex items-center space-x-1 shadow">
+                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
                                   <span>Assigned</span>
                                 </span>
                               )}
                             </div>
 
                             <div>
-                              <h4 className="font-bold text-slate-900 text-sm flex items-center space-x-1.5">
-                                <Clock className="w-4 h-4 text-indigo-600" />
+                              <h4 className="font-black text-white text-sm flex items-center space-x-1.5">
+                                <Clock className="w-4 h-4 text-white/90" />
                                 <span>{shift.timeSlot}</span>
                               </h4>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/90 font-medium">
                                 <span className="flex items-center space-x-1">
-                                  <Building className="w-3.5 h-3.5 text-slate-400" />
+                                  <Building className="w-3.5 h-3.5 text-white/80" />
                                   <span>{shift.location}</span>
                                 </span>
                                 {shift.department && (
-                                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-semibold text-[10px]">
+                                  <span className="bg-black/20 text-white px-2 py-0.5 rounded font-bold text-[10px]">
                                     {shift.department}
                                   </span>
                                 )}
                               </div>
                             </div>
+                          </div>
 
+                          {/* BOTTOM HALF STATUS & AVAILABILITY */}
+                          <div className="p-5 space-y-3 bg-white">
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                               <div className="flex justify-between items-center text-[11px]">
                                 {assignedCount < requiredCount ? (
@@ -1207,47 +1365,47 @@ export default function App() {
                               <span>Click for Position Breakdown</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </p>
-                          </div>
 
-                          <div 
-                            className="pt-3 border-t border-slate-100 mt-3 space-y-2" 
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <button
-                                onClick={() => handleAvailabilityToggle(shift.id, 'available')}
-                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
-                                  workerStatus === 'available'
-                                    ? 'bg-emerald-600 text-white border-emerald-600'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                }`}
-                              >
-                                <CheckCircle className="w-3 h-3" />
-                                <span>Available</span>
-                              </button>
-                              <button
-                                onClick={() => handleAvailabilityToggle(shift.id, 'preferred')}
-                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
-                                  workerStatus === 'preferred'
-                                    ? 'bg-amber-500 text-white border-amber-500'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                }`}
-                              >
-                                <Star className="w-3 h-3 fill-current" />
-                                <span>Preferred</span>
-                              </button>
-                              <button
-                                onClick={() => handleAvailabilityToggle(shift.id, 'unavailable')}
-                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
-                                  workerStatus === 'unavailable'
-                                    ? 'bg-rose-600 text-white border-rose-600'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                }`}
-                              >
-                                <XCircle className="w-3 h-3" />
-                                <span>Unavailable</span>
-                              </button>
+                            <div 
+                              className="pt-3 border-t border-slate-100 space-y-2" 
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Availability</span>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <button
+                                  onClick={() => handleAvailabilityToggle(shift.id, 'available')}
+                                  className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                    workerStatus === 'available'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                  <span>Available</span>
+                                </button>
+                                <button
+                                  onClick={() => handleAvailabilityToggle(shift.id, 'preferred')}
+                                  className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                    workerStatus === 'preferred'
+                                      ? 'bg-amber-500 text-white border-amber-500'
+                                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <Star className="w-3 h-3 fill-current" />
+                                  <span>Preferred</span>
+                                </button>
+                                <button
+                                  onClick={() => handleAvailabilityToggle(shift.id, 'unavailable')}
+                                  className={`py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1 border transition ${
+                                    workerStatus === 'unavailable'
+                                      ? 'bg-rose-600 text-white border-rose-600'
+                                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <XCircle className="w-3 h-3" />
+                                  <span>Unavailable</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1272,6 +1430,13 @@ export default function App() {
 
               {isManagerAuthenticated && (
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setShowNotificationModal(true)}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center space-x-1.5 border border-indigo-200"
+                  >
+                    <Bell className="w-4 h-4 text-indigo-600" />
+                    <span>Broadcast Notification</span>
+                  </button>
                   <button
                     onClick={handleSeedDemoData}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2.5 rounded-xl transition flex items-center space-x-1"
@@ -1307,8 +1472,8 @@ export default function App() {
                       setNewShift({
                         date: SAMPLE_DATES[0],
                         timeSlot: 'Morning (08:00 AM - 04:00 PM)',
-                        location: locations[0] || 'Main Branch',
-                        department: departments[0] || 'Front of House',
+                        location: locationNames[0] || 'Main Branch',
+                        department: departmentNames[0] || 'Front of House',
                         positionsList: []
                       });
                       setShowAddShiftModal(true);
@@ -1434,32 +1599,30 @@ export default function App() {
                       const assignedCount = assignedPositions.length;
                       const requiredCount = shift.requiredCount || 0;
                       const targetCount = shift.idealCount || requiredCount;
+                      const locColor = getLocationColor(shift.location);
 
-                      // Helper to check if a worker is already assigned to ANY slot in this shift
                       const isWorkerAssignedInShift = (wId) => assignedPositions.some(ap => ap.workerId === wId);
 
                       return (
-                        <div key={shift.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div key={shift.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+                          {/* TOP HALF COLOR CODED BY LOCATION */}
+                          <div 
+                            className="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                            style={{ backgroundColor: locColor }}
+                          >
                             <div className="flex items-center space-x-3">
-                              <span className="text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-xl">
+                              <span className="text-xs font-black bg-white/20 text-white px-3 py-1 rounded-xl">
                                 {shift.date}
                               </span>
-                              <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-1.5">
-                                <Clock className="w-4 h-4 text-slate-400" />
+                              <h3 className="font-bold text-white text-sm flex items-center space-x-1.5">
+                                <Clock className="w-4 h-4 text-white/90" />
                                 <span>{shift.timeSlot}</span>
                               </h3>
-                              <span className="text-xs text-slate-500">({shift.location} • {shift.department || 'General'})</span>
+                              <span className="text-xs text-white/90">({shift.location} • {shift.department || 'General'})</span>
                             </div>
 
                             <div className="flex items-center space-x-3">
-                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                                assignedCount >= targetCount
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : assignedCount >= requiredCount
-                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                    : 'bg-rose-100 text-rose-800 border-rose-300'
-                              }`}>
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white text-slate-900 shadow">
                                 {assignedCount} / {requiredCount} Required ({targetCount} Target)
                               </span>
                               <button
@@ -1469,19 +1632,19 @@ export default function App() {
                                     date: shift.date,
                                     timeSlot: shift.timeSlot,
                                     location: shift.location,
-                                    department: shift.department || departments[0],
+                                    department: shift.department || departmentNames[0],
                                     positionsList: shift.positionsList || []
                                   });
                                   setShowAddShiftModal(true);
                                 }}
-                                className="text-slate-400 hover:text-indigo-600 p-1 transition"
+                                className="text-white/80 hover:text-white p-1 transition"
                                 title="Edit Shift"
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDeleteShift(shift.id)}
-                                className="text-slate-400 hover:text-rose-600 p-1 transition"
+                                className="text-white/80 hover:text-white p-1 transition"
                                 title="Delete Shift"
                               >
                                 <XCircle className="w-5 h-5" />
@@ -1489,9 +1652,10 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div>
-                            <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
-                              Staff & Position Assignment
+                          {/* BOTTOM HALF INTERACTIVE ASSIGNMENT GRID */}
+                          <div className="p-5 pt-0 space-y-3">
+                            <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mt-2">
+                              Position Slots & Interactive Staff Assignment
                             </span>
 
                             {(!shift.positionsList || shift.positionsList.length === 0) ? (
@@ -1504,7 +1668,6 @@ export default function App() {
                                   const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
                                   const assignedWorker = workers.find(w => w.id === assignment?.workerId);
 
-                                  // Group workers by their response status for this shift
                                   const preferredWorkers = [];
                                   const availableWorkers = [];
                                   const noResponseWorkers = [];
@@ -1545,7 +1708,6 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      {/* Assigned State or Quick-Assign Buttons */}
                                       {assignedWorker ? (
                                         <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-300 shadow-sm">
                                           <div className="flex items-center space-x-2">
@@ -1572,7 +1734,6 @@ export default function App() {
                                           </span>
 
                                           <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-                                            {/* Preferred Group */}
                                             {preferredWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
                                               return (
@@ -1594,7 +1755,6 @@ export default function App() {
                                               );
                                             })}
 
-                                            {/* Available Group */}
                                             {availableWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
                                               return (
@@ -1608,7 +1768,7 @@ export default function App() {
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
                                                       : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
                                                   }`}
-                                                  title={alreadyInShift ? 'Already assigned to another slot in this shift' : 'Click to assign (Available)'}
+                                                  title={alreadyInShift ? 'Already assigned' : 'Click to assign (Available)'}
                                                 >
                                                   <CheckCircle className="w-3 h-3 text-emerald-600" />
                                                   <span>{formatShortName(w.name)}</span>
@@ -1616,7 +1776,6 @@ export default function App() {
                                               );
                                             })}
 
-                                            {/* No Response Group */}
                                             {noResponseWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
                                               return (
@@ -1637,7 +1796,6 @@ export default function App() {
                                               );
                                             })}
 
-                                            {/* Unavailable Group (Muted / Warning) */}
                                             {unavailableWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
                                               return (
@@ -1673,6 +1831,65 @@ export default function App() {
         )}
       </main>
 
+      {/* BROADCAST NOTIFICATION MODAL */}
+      {showNotificationModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <Bell className="w-5 h-5 text-indigo-600" />
+                <span>Broadcast Portal Notification</span>
+              </h3>
+              <button onClick={() => setShowNotificationModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePublishNotification} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Notification Type</label>
+                <select
+                  value={newNotifType}
+                  onChange={(e) => setNewNotifType(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                >
+                  <option value="message">Notice / Message (Amber Banner)</option>
+                  <option value="alert">Alert / Urgent (Red Banner)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Notification Message</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Enter announcement text to show workers..."
+                  value={newNotifText}
+                  onChange={(e) => setNewNotifText(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                ></textarea>
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationModal(false)}
+                  className="bg-slate-100 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700"
+                >
+                  Publish to Worker Portal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MASTER PRINTABLE REPORT MODAL */}
       {showMasterReportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-white">
@@ -1693,7 +1910,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* REPORT FILTER CONTROLS (Hidden during print) */}
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 print:hidden">
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Date</label>
@@ -1716,35 +1932,35 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Venue</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Venue / Location</label>
                 <select
                   value={reportFilterLocation}
                   onChange={(e) => setReportFilterLocation(e.target.value)}
                   className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
                 >
                   <option value="ALL">All Venues</option>
-                  {locations.map((loc, i) => (
+                  {locationNames.map((loc, i) => (
                     <option key={i} value={loc}>{loc}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport / Department</label>
                 <select
                   value={reportFilterDepartment}
                   onChange={(e) => setReportFilterDepartment(e.target.value)}
                   className="w-full text-xs p-2 bg-white border border-slate-300 rounded-xl"
                 >
                   <option value="ALL">All Sports</option>
-                  {departments.map((dept, i) => (
+                  {departmentNames.map((dept, i) => (
                     <option key={i} value={dept}>{dept}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Position</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Position / Role</label>
                 <select
                   value={reportFilterPosition}
                   onChange={(e) => setReportFilterPosition(e.target.value)}
@@ -1758,7 +1974,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* REPORT PRINT HEADER */}
             <div className="hidden print:block text-center pb-4 border-b border-slate-300 space-y-1">
               <h1 className="text-xl font-black text-slate-900">ShiftSync Pro - Master Schedule Report</h1>
               <p className="text-xs text-slate-600">
@@ -1767,7 +1982,6 @@ export default function App() {
               </p>
             </div>
 
-            {/* REPORT RESULTS LIST */}
             <div className="space-y-4">
               {shifts
                 .filter(s => {
@@ -1993,21 +2207,17 @@ export default function App() {
                 />
               </div>
 
-              {/* MANAGER MULTI-SELECT SHIFT RESTRICTIONS */}
               {isManagerAuthenticated && (
                 <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-3 mt-2">
                   <div className="flex items-center space-x-1.5 text-indigo-900 font-extrabold text-xs">
                     <Filter className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Worker Shift Access Restrictions (Multi-Select)</span>
                   </div>
-                  <p className="text-[11px] text-indigo-700">
-                    Select multiple venues, sports, or positions. Leave all unchecked for unrestricted access.
-                  </p>
 
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
-                      {locations.map((loc, i) => {
+                      {locationNames.map((loc, i) => {
                         const currentAllowed = editingProfile.allowedLocations || [];
                         const isChecked = currentAllowed.includes(loc);
                         return (
@@ -2033,7 +2243,7 @@ export default function App() {
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
-                      {departments.map((dept, i) => {
+                      {departmentNames.map((dept, i) => {
                         const currentAllowed = editingProfile.allowedDepartments || [];
                         const isChecked = currentAllowed.includes(dept);
                         return (
@@ -2104,33 +2314,40 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL (MULTI-SELECT FOR POSITIONS) */}
+      {/* ORGANIZATIONAL SETUP MODAL (WITH COLOR PICKERS) */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
                 <Building className="w-5 h-5 text-indigo-600" />
-                <span>Manage Venues, Sports & Positions</span>
+                <span>Manage Venues, Sports, Colors & Positions</span>
               </h3>
               <button onClick={() => setShowOrgStructureModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* LOCATIONS SECTION */}
+            {/* LOCATIONS SECTION WITH COLOR PICKER */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
-                <span>Venues</span>
+                <span>Venues & Color Coding</span>
               </h4>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <input
                   type="text"
                   placeholder="New venue name..."
                   value={newLocName}
                   onChange={(e) => setNewLocName(e.target.value)}
                   className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <input
+                  type="color"
+                  value={newLocColor}
+                  onChange={(e) => setNewLocColor(e.target.value)}
+                  className="w-10 h-8 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                  title="Choose Venue Color"
                 />
                 <button
                   type="button"
@@ -2151,6 +2368,12 @@ export default function App() {
                           onChange={(e) => setEditLocName(e.target.value)}
                           className="text-xs p-1 bg-slate-50 border border-slate-300 rounded flex-1"
                         />
+                        <input
+                          type="color"
+                          value={editLocColor}
+                          onChange={(e) => setEditLocColor(e.target.value)}
+                          className="w-8 h-6 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                        />
                         <button
                           type="button"
                           onClick={() => handleSaveEditLocation(i)}
@@ -2168,13 +2391,17 @@ export default function App() {
                       </div>
                     ) : (
                       <>
-                        <span className="text-xs font-bold text-slate-700">{loc}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm" style={{ backgroundColor: loc.color }}></span>
+                          <span className="text-xs font-bold text-slate-700">{loc.name}</span>
+                        </div>
                         <div className="flex items-center space-x-1">
                           <button
                             type="button"
                             onClick={() => {
                               setEditingLocIndex(i);
-                              setEditLocName(loc);
+                              setEditLocName(loc.name);
+                              setEditLocColor(loc.color || '#4f46e5');
                             }}
                             className="p-1 text-slate-400 hover:text-indigo-600"
                           >
@@ -2195,19 +2422,26 @@ export default function App() {
               </div>
             </div>
 
-            {/* DEPARTMENTS SECTION */}
+            {/* DEPARTMENTS SECTION WITH COLOR PICKER */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Sports</span>
+                <span>Sports & Color Coding</span>
               </h4>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <input
                   type="text"
                   placeholder="New sport..."
                   value={newDeptName}
                   onChange={(e) => setNewDeptName(e.target.value)}
                   className="text-xs p-2 bg-white border border-slate-300 rounded-lg flex-1"
+                />
+                <input
+                  type="color"
+                  value={newDeptColor}
+                  onChange={(e) => setNewDeptColor(e.target.value)}
+                  className="w-10 h-8 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                  title="Choose Sport Color"
                 />
                 <button
                   type="button"
@@ -2228,6 +2462,12 @@ export default function App() {
                           onChange={(e) => setEditDeptName(e.target.value)}
                           className="text-xs p-1 bg-slate-50 border border-slate-300 rounded flex-1"
                         />
+                        <input
+                          type="color"
+                          value={editDeptColor}
+                          onChange={(e) => setEditDeptColor(e.target.value)}
+                          className="w-8 h-6 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                        />
                         <button
                           type="button"
                           onClick={() => handleSaveEditDepartment(i)}
@@ -2245,13 +2485,17 @@ export default function App() {
                       </div>
                     ) : (
                       <>
-                        <span className="text-xs font-bold text-slate-700">{dept}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm" style={{ backgroundColor: dept.color }}></span>
+                          <span className="text-xs font-bold text-slate-700">{dept.name}</span>
+                        </div>
                         <div className="flex items-center space-x-1">
                           <button
                             type="button"
                             onClick={() => {
                               setEditingDeptIndex(i);
-                              setEditDeptName(dept);
+                              setEditDeptName(dept.name);
+                              setEditDeptColor(dept.color || '#6366f1');
                             }}
                             className="p-1 text-slate-400 hover:text-indigo-600"
                           >
@@ -2272,7 +2516,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* POSITIONS SECTION WITH MULTI-SELECT DEPARTMENTS & LOCATIONS */}
+            {/* POSITIONS SECTION */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Briefcase className="w-4 h-4 text-indigo-600" />
@@ -2292,7 +2536,7 @@ export default function App() {
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Restrict to Sports</span>
                     <div className="bg-slate-50 p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                      {departments.map((d, i) => (
+                      {departmentNames.map((d, i) => (
                         <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                           <input
                             type="checkbox"
@@ -2314,7 +2558,7 @@ export default function App() {
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Restrict to Venues</span>
                     <div className="bg-slate-50 p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                      {locations.map((l, i) => (
+                      {locationNames.map((l, i) => (
                         <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                           <input
                             type="checkbox"
@@ -2360,7 +2604,7 @@ export default function App() {
                           <div>
                             <span className="text-[10px] font-bold text-slate-500 block mb-1">Departments</span>
                             <div className="bg-slate-50 p-2 rounded border border-slate-200 max-h-24 overflow-y-auto space-y-1">
-                              {departments.map((d, i) => (
+                              {departmentNames.map((d, i) => (
                                 <label key={i} className="flex items-center space-x-1 text-[11px] text-slate-700 cursor-pointer">
                                   <input
                                     type="checkbox"
@@ -2381,7 +2625,7 @@ export default function App() {
                           <div>
                             <span className="text-[10px] font-bold text-slate-500 block mb-1">Venues</span>
                             <div className="bg-slate-50 p-2 rounded border border-slate-200 max-h-24 overflow-y-auto space-y-1">
-                              {locations.map((l, i) => (
+                              {locationNames.map((l, i) => (
                                 <label key={i} className="flex items-center space-x-1 text-[11px] text-slate-700 cursor-pointer">
                                   <input
                                     type="checkbox"
@@ -2613,7 +2857,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD WORKER MODAL (MULTI-SELECT RESTRICTIONS) */}
+      {/* ADD WORKER MODAL */}
       {showAddWorkerModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2671,14 +2915,13 @@ export default function App() {
                 />
               </div>
 
-              {/* MULTI-SELECT SHIFT ACCESS RESTRICTIONS */}
               <div className="bg-indigo-50/80 p-3.5 rounded-xl border border-indigo-200 space-y-3">
                 <span className="text-xs font-bold text-indigo-900 block">Applicable Restrictions</span>
                 
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                    {locations.map((loc, i) => (
+                    {locationNames.map((loc, i) => (
                       <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                         <input
                           type="checkbox"
@@ -2700,7 +2943,7 @@ export default function App() {
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                    {departments.map((dept, i) => (
+                    {departmentNames.map((dept, i) => (
                       <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                         <input
                           type="checkbox"
@@ -2808,7 +3051,7 @@ export default function App() {
                     onChange={(e) => setNewShift({ ...newShift, location: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   >
-                    {locations.map((loc, i) => (
+                    {locationNames.map((loc, i) => (
                       <option key={i} value={loc}>{loc}</option>
                     ))}
                   </select>
@@ -2820,7 +3063,7 @@ export default function App() {
                     onChange={(e) => setNewShift({ ...newShift, department: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   >
-                    {departments.map((dept, i) => (
+                    {departmentNames.map((dept, i) => (
                       <option key={i} value={dept}>{dept}</option>
                     ))}
                   </select>
