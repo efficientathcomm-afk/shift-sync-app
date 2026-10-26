@@ -1491,7 +1491,7 @@ export default function App() {
 
                           <div>
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
-                              Simplified Position Slots & Staff Assignment
+                              Staff & Position Assignment
                             </span>
 
                             {(!shift.positionsList || shift.positionsList.length === 0) ? (
@@ -1716,7 +1716,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Venue / Location</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Venue</label>
                 <select
                   value={reportFilterLocation}
                   onChange={(e) => setReportFilterLocation(e.target.value)}
@@ -1730,7 +1730,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport / Department</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport</label>
                 <select
                   value={reportFilterDepartment}
                   onChange={(e) => setReportFilterDepartment(e.target.value)}
@@ -1744,7 +1744,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Position / Role</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Position</label>
                 <select
                   value={reportFilterPosition}
                   onChange={(e) => setReportFilterPosition(e.target.value)}
