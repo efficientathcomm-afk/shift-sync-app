@@ -1000,9 +1000,9 @@ export default function App() {
               <AlertCircle className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-white tracking-wide">Upcoming Shift Coverage Status</h2>
+              <h2 className="text-sm font-black text-white tracking-wide">Upcoming Coverage Status</h2>
               <p className="text-xs text-slate-400 font-medium mt-0.5">
-                {scheduleHealthSummary.totalShifts} Upcoming Shifts • Click any shift card to view position breakdowns!
+                {scheduleHealthSummary.totalShifts} Upcoming Shifts • Click a shift card to view position breakdowns.
               </p>
             </div>
           </div>
@@ -1059,7 +1059,7 @@ export default function App() {
                   )}
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider">
-                      {activeNotification.type === 'alert' ? 'Manager Alert' : 'Manager Notice'}
+                      {activeNotification.type === 'alert' ? 'Alert' : 'Information'}
                     </h4>
                     <p className="text-xs font-medium mt-0.5">{activeNotification.text}</p>
                   </div>
@@ -1083,7 +1083,7 @@ export default function App() {
                   <Calendar className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-blue-200">Today's Active Assignment</h3>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-blue-200">Today's Shift(s)</h3>
                   <p className="text-xs font-bold mt-0.5">
                     You have a shift scheduled today! You are scheduled for <strong>{workerShiftTodayDetails.position}</strong> at <strong>{workerShiftTodayDetails.location}</strong> ({workerShiftTodayDetails.time}).
                   </p>
@@ -1225,7 +1225,7 @@ export default function App() {
                   />
 
                   {workerPinError && (
-                    <p className="text-xs text-rose-600 font-semibold">Incorrect PIN. Contact your Manager if needed.</p>
+                    <p className="text-xs text-rose-600 font-semibold">Incorrect PIN. Contact Luke or Hannah, if needed.</p>
                   )}
 
                   <div className="pt-2">
@@ -1270,7 +1270,7 @@ export default function App() {
                   <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 text-slate-500">
                     <Calendar className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="text-sm font-bold text-slate-700">No active shifts scheduled</p>
-                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts matching your location/department restrictions or date filter.</p>
+                    <p className="text-xs text-slate-400 mt-1">There are currently no open shifts matching your staffing restrictions or date filter.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1495,7 +1495,7 @@ export default function App() {
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Manager Security Gate</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Enter Manager PIN to access Manager Portal.
+                    Enter Manager PIN to access Admin Portal.
                   </p>
                 </div>
 
@@ -1946,7 +1946,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport / Department</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sport</label>
                 <select
                   value={reportFilterDepartment}
                   onChange={(e) => setReportFilterDepartment(e.target.value)}
@@ -2332,7 +2332,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
-                <span>Venues & Color Coding</span>
+                <span>Venues</span>
               </h4>
               <div className="flex gap-2 items-center">
                 <input
@@ -2426,7 +2426,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Sports & Color Coding</span>
+                <span>Sports</span>
               </h4>
               <div className="flex gap-2 items-center">
                 <input
@@ -2520,7 +2520,7 @@ export default function App() {
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Briefcase className="w-4 h-4 text-indigo-600" />
-                <span>Positions / Job Titles (Multi-Venue & Multi-Department)</span>
+                <span>Positions</span>
               </h4>
               
               <div className="space-y-2 bg-white p-3 rounded-xl border border-slate-300">
@@ -2602,7 +2602,7 @@ export default function App() {
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-500 block mb-1">Departments</span>
+                            <span className="text-[10px] font-bold text-slate-500 block mb-1">Sports</span>
                             <div className="bg-slate-50 p-2 rounded border border-slate-200 max-h-24 overflow-y-auto space-y-1">
                               {departmentNames.map((d, i) => (
                                 <label key={i} className="flex items-center space-x-1 text-[11px] text-slate-700 cursor-pointer">
@@ -3031,11 +3031,11 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Time Slot</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Time</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Morning (08:00 AM - 04:00 PM)"
+                    placeholder="e.g. 4:00 PM)"
                     value={newShift.timeSlot}
                     onChange={(e) => setNewShift({ ...newShift, timeSlot: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
@@ -3057,7 +3057,7 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sport</label>
                   <select
                     value={newShift.department}
                     onChange={(e) => setNewShift({ ...newShift, department: e.target.value })}
@@ -3094,7 +3094,7 @@ export default function App() {
                       </option>
                     ))}
                     {filteredPositionsForShift.length === 0 && (
-                      <option value="">No matching positions for this loc/dept</option>
+                      <option value="">No matching positions.</option>
                     )}
                   </select>
                   <button
