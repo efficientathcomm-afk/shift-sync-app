@@ -467,6 +467,12 @@ export default function App() {
     return locObj?.color || '#4f46e5';
   };
 
+  // Helper to get department color
+  const getDepartmentColor = (deptName) => {
+    const deptObj = departments.find(d => d.name === deptName);
+    return deptObj?.color || '#6366f1';
+  };
+
   const handlePublishNotification = async (e) => {
     e.preventDefault();
     const notifObj = newNotifText.trim() ? { type: newNotifType, text: newNotifText.trim() } : null;
