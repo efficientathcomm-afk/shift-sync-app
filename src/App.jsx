@@ -34,9 +34,9 @@ import {
   User,
   Trash2,
   Filter,
-  AlertTriangle,
-  Info,
-  Bell
+  Bell,
+  Copy,
+  Download
 } from 'lucide-react';
 
 // Exact Firebase project configuration
@@ -78,6 +78,20 @@ const getUpcomingDates = () => {
 
 const SAMPLE_DATES = getUpcomingDates();
 
+// Helper to format date safely avoiding timezone shifts
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const [year, month, day] = dateString.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day);
+  
+  return dateObj.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short', 
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
 // Helper to format name as First Name, Last Initial (e.g. "Alex Rivera" -> "Alex R.")
 const formatShortName = (fullName) => {
   if (!fullName) return '';
@@ -92,20 +106,6 @@ export default function App() {
   const [workers, setWorkers] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [availabilities, setAvailabilities] = useState({});
-
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  // Splits '2026-10-26' safely avoiding timezone shifts
-  const [year, month, day] = dateString.split('-').map(Number);
-  const dateObj = new Date(year, month - 1, day);
-  
-  // Format as: "Mon, Oct 26, 2026" or "October 26, 2026"
-  return dateObj.toLocaleDateString('en-US', {
-    month: 'short', 
-    day: 'numeric',
-    year: 'numeric'
-  });
-};
 
   // Organizational Management State (Locations, Departments, Positions with Colors)
   const [locations, setLocations] = useState([
@@ -219,6 +219,42 @@ const formatDate = (dateString) => {
 
   const handlePrintSchedule = () => {
     window.print();
+  };
+
+  const handleExportCSV = () => {
+    const filtered = shifts.filter(s => {
+      if (reportFilterStartDate && s.date < reportFilterStartDate) return false;
+      if (reportFilterEndDate && s.date > reportFilterEndDate) return false;
+      if (reportFilterLocation !== 'ALL' && s.location !== reportFilterLocation) return false;
+      if (reportFilterDepartment !== 'ALL' && s.department !== reportFilterDepartment) return false;
+      if (reportFilterPosition !== 'ALL') {
+        const hasPos = (s.positionsList || []).some(p => p.positionName === reportFilterPosition);
+        if (!hasPos) return false;
+      }
+      return true;
+    });
+
+    let csvContent = "data:text/csv;charset=utf-8,Date,Time Slot,Venue,Sport,Position,Assigned Worker,Status\n";
+    
+    filtered.forEach(shift => {
+      (shift.positionsList || []).forEach((pos, idx) => {
+        if (reportFilterPosition !== 'ALL' && pos.positionName !== reportFilterPosition) return;
+        const assignment = (shift.assignedPositions || []).find(ap => ap.slotIndex === idx);
+        const assignedWorker = workers.find(w => w.id === assignment?.workerId);
+        const workerName = assignedWorker ? `"${assignedWorker.name}"` : "Unassigned";
+        const status = assignedWorker ? "Assigned" : (pos.required ? "Required Open" : "Optional Open");
+        
+        csvContent += `${shift.date},"${shift.timeSlot}","${shift.location}","${shift.department || ''}","${pos.positionName}",${workerName},${status}\n`;
+      });
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `shiftsync_report_${reportFilterStartDate}_to_${reportFilterEndDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Firebase Authentication setup
@@ -767,6 +803,26 @@ const formatDate = (dateString) => {
     } catch (err) { console.warn(err); }
   };
 
+  const handleDuplicateShift = async (shiftToCopy) => {
+    const newId = 's_' + Date.now();
+    const duplicatedShift = {
+      ...shiftToCopy,
+      id: newId,
+      assignedPositions: [],
+      assignedWorkerIds: []
+    };
+
+    const updatedShifts = [...shifts, duplicatedShift];
+    await persistShiftUpdate(updatedShifts);
+
+    try {
+      if (db) {
+        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId);
+        await setDoc(shiftRef, duplicatedShift);
+      }
+    } catch (err) { console.warn(err); }
+  };
+
   const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
     let updatedShift;
     const updatedShifts = shifts.map(s => {
@@ -1014,7 +1070,7 @@ const formatDate = (dateString) => {
               <AlertCircle className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-white tracking-wide">Upcoming Coverage Status</h2>
+              <h2 className="text-sm font-black text-white tracking-wide">Upcoming Shift Coverage Status</h2>
               <p className="text-xs text-slate-400 font-medium mt-0.5">
                 {scheduleHealthSummary.totalShifts} Upcoming Shifts • Click a shift card to view position breakdowns.
               </p>
@@ -1584,7 +1640,7 @@ const formatDate = (dateString) => {
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
                       >
-                        {date}
+                        {formatDate(date)}
                       </button>
                     ))}
                   </div>
@@ -1639,6 +1695,13 @@ const formatDate = (dateString) => {
                               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white text-slate-900 shadow">
                                 {assignedCount} / {requiredCount} Required ({targetCount} Target)
                               </span>
+                              <button
+                                onClick={() => handleDuplicateShift(shift)}
+                                className="text-white/80 hover:text-white p-1 transition"
+                                title="Duplicate Shift"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => {
                                   setEditingShift(shift);
@@ -2066,14 +2129,24 @@ const formatDate = (dateString) => {
             </div>
 
             <div className="pt-4 flex justify-between items-center print:hidden border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handlePrintSchedule}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center space-x-1.5"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Master Report</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handlePrintSchedule}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center space-x-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Master Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center space-x-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export to CSV</span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowMasterReportModal(false)}
@@ -2093,7 +2166,7 @@ const formatDate = (dateString) => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md">
-                  {inspectingShift.date}
+                  {formatDate(inspectingShift.date)}
                 </span>
                 <h3 className="text-lg font-black text-slate-900 mt-1">{inspectingShift.timeSlot}</h3>
                 <p className="text-xs text-slate-500">
@@ -2781,80 +2854,91 @@ const formatDate = (dateString) => {
               {searchedWorkers.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">No staff members found. Click "Add Staff" above to create one.</p>
               ) : (
-                searchedWorkers.map(w => (
-                  <div key={w.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div className="pr-2">
-                      <h4 className="font-bold text-slate-800 text-xs">{w.name}</h4>
-                      <p className="text-[11px] text-slate-500">{w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
-                      {((w.allowedLocations || []).length > 0 || (w.allowedDepartments || []).length > 0 || (w.allowedPositions || []).length > 0) && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {(w.allowedLocations || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Locs: {w.allowedLocations.join(', ')}</span>}
-                          {(w.allowedDepartments || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Depts: {w.allowedDepartments.join(', ')}</span>}
-                          {(w.allowedPositions || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Pos: {w.allowedPositions.join(', ')}</span>}
-                        </div>
-                      )}
-                    </div>
+                searchedWorkers.map(w => {
+                  const assignedShiftsCount = shifts.filter(s => 
+                    (s.assignedPositions || []).some(ap => ap.workerId === w.id) || s.assignedWorkerIds?.includes(w.id)
+                  ).length;
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingProfile({ ...w });
-                          setShowEditProfileModal(true);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                        title="Edit Full Profile"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-
-                      {editingWorkerPinId === w.id ? (
-                        <div className="flex items-center space-x-1">
-                          <input
-                            type="text"
-                            maxLength={4}
-                            placeholder="New PIN"
-                            value={tempWorkerPin}
-                            onChange={(e) => setTempWorkerPin(e.target.value)}
-                            className="w-16 text-center text-xs border border-slate-300 rounded p-1 font-bold"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateWorkerPin(w.id, tempWorkerPin)}
-                            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      ) : (
+                  return (
+                    <div key={w.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                      <div className="pr-2">
                         <div className="flex items-center space-x-2">
-                          <span className="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200 font-bold">
-                            {showPinsInDirectory ? w.pin : '••••'}
+                          <h4 className="font-bold text-slate-800 text-xs">{w.name}</h4>
+                          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                            {assignedShiftsCount} Assigned Shift{assignedShiftsCount !== 1 ? 's' : ''}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingWorkerPinId(w.id);
-                              setTempWorkerPin(w.pin);
-                            }}
-                            className="text-[11px] text-indigo-600 hover:underline font-semibold"
-                          >
-                            Edit PIN
-                          </button>
                         </div>
-                      )}
+                        <p className="text-[11px] text-slate-500 mt-0.5">{w.email || 'No Email'} • {w.phone || 'No Phone'}</p>
+                        {((w.allowedLocations || []).length > 0 || (w.allowedDepartments || []).length > 0 || (w.allowedPositions || []).length > 0) && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {(w.allowedLocations || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Locs: {w.allowedLocations.join(', ')}</span>}
+                            {(w.allowedDepartments || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Depts: {w.allowedDepartments.join(', ')}</span>}
+                            {(w.allowedPositions || []).length > 0 && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">Pos: {w.allowedPositions.join(', ')}</span>}
+                          </div>
+                        )}
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteWorker(w.id)}
-                        title="Delete Worker"
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      >
-                        <XCircle className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProfile({ ...w });
+                            setShowEditProfileModal(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                          title="Edit Full Profile"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+
+                        {editingWorkerPinId === w.id ? (
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="text"
+                              maxLength={4}
+                              placeholder="New PIN"
+                              value={tempWorkerPin}
+                              onChange={(e) => setTempWorkerPin(e.target.value)}
+                              className="w-16 text-center text-xs border border-slate-300 rounded p-1 font-bold"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateWorkerPin(w.id, tempWorkerPin)}
+                              className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200 font-bold">
+                              {showPinsInDirectory ? w.pin : '••••'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingWorkerPinId(w.id);
+                                setTempWorkerPin(w.pin);
+                              }}
+                              className="text-[11px] text-indigo-600 hover:underline font-semibold"
+                            >
+                              Edit PIN
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteWorker(w.id)}
+                          title="Delete Worker"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -3205,7 +3289,7 @@ const formatDate = (dateString) => {
                     return (
                       <div key={s.id} className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
                         <div>
-                          <span className="text-[11px] font-bold text-indigo-700">{s.date}</span>
+                          <span className="text-[11px] font-bold text-indigo-700">{formatDate(s.date)}</span>
                           <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
                           <p className="text-[11px] text-slate-500">
                             {s.location} {s.department ? `• ${s.department}` : ''}
