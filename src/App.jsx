@@ -92,6 +92,15 @@ const formatDate = (dateString) => {
   });
 };
 
+// Helper to format time (e.g. "08:00" -> "8:00 AM")
+const formatTime12h = (time24) => {
+  if (!time24) return '';
+  const [h, m] = time24.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m < 10 ? '0' : ''}${m} ${period}`;
+};
+
 // Helper to format name as First Name, Last Initial (e.g. "Alex Rivera" -> "Alex R.")
 const formatShortName = (fullName) => {
   if (!fullName) return '';
@@ -190,7 +199,8 @@ export default function App() {
   const [newPosLocs, setNewPosLocs] = useState([]);
 
   const [newWorker, setNewWorker] = useState({ 
-    name: '', 
+    firstName: '',
+    lastName: '',
     email: '', 
     phone: '', 
     pin: '',
@@ -199,10 +209,11 @@ export default function App() {
     allowedPositions: []
   });
   
-  // Shift creation form state
+  // Shift creation form state with start and end times
   const [newShift, setNewShift] = useState({
     date: SAMPLE_DATES[0],
-    timeSlot: 'Morning (08:00 AM - 04:00 PM)',
+    startTime: '08:00',
+    endTime: '16:00',
     location: 'Main Branch',
     department: 'Front of House',
     positionsList: [] 
@@ -234,9 +245,10 @@ export default function App() {
       return true;
     });
 
-    let csvContent = "data:text/csv;charset=utf-8,Date,Time Slot,Venue,Sport,Position,Assigned Worker,Status\n";
+    let csvContent = "data:text/csv;charset=utf-8,Date,Time,Venue,Sport,Position,Assigned Worker,Status\n";
     
     filtered.forEach(shift => {
+      const timeStr = `${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)}`;
       (shift.positionsList || []).forEach((pos, idx) => {
         if (reportFilterPosition !== 'ALL' && pos.positionName !== reportFilterPosition) return;
         const assignment = (shift.assignedPositions || []).find(ap => ap.slotIndex === idx);
@@ -244,7 +256,7 @@ export default function App() {
         const workerName = assignedWorker ? `"${assignedWorker.name}"` : "Unassigned";
         const status = assignedWorker ? "Assigned" : (pos.required ? "Required Open" : "Optional Open");
         
-        csvContent += `${shift.date},"${shift.timeSlot}","${shift.location}","${shift.department || ''}","${pos.positionName}",${workerName},${status}\n`;
+        csvContent += `${shift.date},"${timeStr}","${shift.location}","${shift.department || ''}","${pos.positionName}",${workerName},${status}\n`;
       });
     });
 
@@ -293,8 +305,27 @@ export default function App() {
       const localPoss = localStorage.getItem('shiftsync_poss');
       const localNotif = localStorage.getItem('shiftsync_notif');
 
-      if (localWorkers) setWorkers(JSON.parse(localWorkers));
-      if (localShifts) setShifts(JSON.parse(localShifts));
+      if (localWorkers) {
+        // Ensure name consistency with firstName/lastName migration if needed
+        const parsedW = JSON.parse(localWorkers).map(w => {
+          if (!w.firstName && w.name) {
+            const parts = w.name.trim().split(/\s+/);
+            return { ...w, firstName: parts[0], lastName: parts.slice(1).join(' ') || '' };
+          }
+          return w;
+        });
+        setWorkers(parsedW);
+      }
+      if (localShifts) {
+        // Migrate old timeSlot to startTime/endTime if needed
+        const parsedS = JSON.parse(localShifts).map(s => {
+          if (!s.startTime && s.timeSlot) {
+            return { ...s, startTime: '08:00', endTime: '16:00' };
+          }
+          return s;
+        });
+        setShifts(parsedS);
+      }
       if (localAvail) setAvailabilities(JSON.parse(localAvail));
       if (localNotif) setActiveNotification(JSON.parse(localNotif));
 
@@ -329,7 +360,16 @@ export default function App() {
     const orgCol = collection(db, 'artifacts', appId, 'public', 'data', 'org_structure');
 
     const unsubWorkers = onSnapshot(workersCol, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(w => !w._deleted);
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        if (!d.firstName && d.name) {
+          const parts = d.name.trim().split(/\s+/);
+          d.firstName = parts[0];
+          d.lastName = parts.slice(1).join(' ') || '';
+        }
+        return { id: doc.id, ...d };
+      }).filter(w => !w._deleted);
+
       if (data.length > 0) {
         setWorkers(data);
         localStorage.setItem('shiftsync_workers', JSON.stringify(data));
@@ -391,15 +431,27 @@ export default function App() {
     };
   }, [user]);
 
+  // Sorted workers alphabetically by last name (then first name)
+  const sortedWorkers = useMemo(() => {
+    return [...workers].sort((a, b) => {
+      const lA = (a.lastName || a.name || '').toLowerCase();
+      const lB = (b.lastName || b.name || '').toLowerCase();
+      if (lA !== lB) return lA.localeCompare(lB);
+      const fA = (a.firstName || '').toLowerCase();
+      const fB = (b.firstName || '').toLowerCase();
+      return fA.localeCompare(fB);
+    });
+  }, [workers]);
+
   const currentWorker = useMemo(() => {
-    return workers.find(w => w.id === selectedWorkerId) || null;
-  }, [workers, selectedWorkerId]);
+    return sortedWorkers.find(w => w.id === selectedWorkerId) || null;
+  }, [sortedWorkers, selectedWorkerId]);
 
   useEffect(() => {
-    if (workers.length > 0 && (!selectedWorkerId || !workers.some(w => w.id === selectedWorkerId))) {
-      setSelectedWorkerId(workers[0].id);
+    if (sortedWorkers.length > 0 && (!selectedWorkerId || !sortedWorkers.some(w => w.id === selectedWorkerId))) {
+      setSelectedWorkerId(sortedWorkers[0].id);
     }
-  }, [workers, selectedWorkerId]);
+  }, [sortedWorkers, selectedWorkerId]);
 
   // Check if current worker has a shift scheduled today
   const todayDateString = SAMPLE_DATES[0];
@@ -417,10 +469,11 @@ export default function App() {
     if (!workerShiftToday || !currentWorker) return null;
     const match = (workerShiftToday.assignedPositions || []).find(ap => ap.workerId === currentWorker.id);
     const posName = match ? (workerShiftToday.positionsList?.[match.slotIndex]?.positionName || 'Scheduled Role') : 'Scheduled Role';
+    const timeStr = `${formatTime12h(workerShiftToday.startTime)} - ${formatTime12h(workerShiftToday.endTime)}`;
     return {
       position: posName,
       location: workerShiftToday.location,
-      time: workerShiftToday.timeSlot
+      time: timeStr
     };
   }, [workerShiftToday, currentWorker]);
 
@@ -467,7 +520,6 @@ export default function App() {
     return locObj?.color || '#4f46e5';
   };
 
-  // Helper to get department color
   const getDepartmentColor = (deptName) => {
     const deptObj = departments.find(d => d.name === deptName);
     return deptObj?.color || '#6366f1';
@@ -500,16 +552,19 @@ export default function App() {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    if (!editingProfile || !editingProfile.name.trim()) return;
+    if (!editingProfile || !editingProfile.firstName?.trim()) return;
 
-    const updatedWorkers = workers.map(w => w.id === editingProfile.id ? editingProfile : w);
+    const fullName = `${editingProfile.firstName.trim()} ${editingProfile.lastName?.trim() || ''}`.trim();
+    const payload = { ...editingProfile, name: fullName };
+
+    const updatedWorkers = workers.map(w => w.id === payload.id ? payload : w);
     await persistWorkerUpdate(updatedWorkers);
     setShowEditProfileModal(false);
 
     try {
       if (db) {
-        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', editingProfile.id);
-        await setDoc(workerRef, editingProfile, { merge: true });
+        const workerRef = doc(db, 'artifacts', appId, 'public', 'data', 'workers', payload.id);
+        await setDoc(workerRef, payload, { merge: true });
       }
     } catch (err) {
       console.warn("Save profile cloud error:", err);
@@ -651,13 +706,16 @@ export default function App() {
 
   const handleCreateWorker = async (e) => {
     e.preventDefault();
-    if (!newWorker.name.trim()) return;
+    if (!newWorker.firstName.trim()) return;
     const newId = 'w_' + Date.now();
     const assignedPin = newWorker.pin.trim() || Math.floor(1000 + Math.random() * 9000).toString();
+    const fullName = `${newWorker.firstName.trim()} ${newWorker.lastName?.trim() || ''}`.trim();
 
     const createdWorker = {
       id: newId,
-      name: newWorker.name.trim(),
+      firstName: newWorker.firstName.trim(),
+      lastName: newWorker.lastName?.trim() || '',
+      name: fullName,
       email: newWorker.email.trim() || 'N/A',
       phone: newWorker.phone.trim() || 'N/A',
       pin: assignedPin,
@@ -672,7 +730,8 @@ export default function App() {
     setIsWorkerAuthenticated(true);
     setShowAddWorkerModal(false);
     setNewWorker({ 
-      name: '', 
+      firstName: '',
+      lastName: '',
       email: '', 
       phone: '', 
       pin: '',
@@ -764,7 +823,8 @@ export default function App() {
     const createdShift = {
       id: newId,
       date: newShift.date,
-      timeSlot: newShift.timeSlot,
+      startTime: newShift.startTime,
+      endTime: newShift.endTime,
       location: newShift.location,
       department: newShift.department || departments[0]?.name || 'General',
       requiredCount: reqCount,
@@ -786,7 +846,8 @@ export default function App() {
     setShowAddShiftModal(false);
     setNewShift({
       date: SAMPLE_DATES[0],
-      timeSlot: 'Morning (08:00 AM - 04:00 PM)',
+      startTime: '08:00',
+      endTime: '16:00',
       location: locations[0]?.name || 'Main Branch',
       department: departments[0]?.name || 'Front of House',
       positionsList: []
@@ -820,7 +881,37 @@ export default function App() {
     } catch (err) { console.warn(err); }
   };
 
+  // Double-booking check helper: returns conflicting shift if worker is already assigned at overlapping time on the same date
+  const checkDoubleBooking = (workerId, targetShiftId, targetDate, startTime, endTime) => {
+    if (!workerId) return null;
+    return shifts.find(s => {
+      if (s.id === targetShiftId) return false;
+      if (s.date !== targetDate) return false;
+      const isAssigned = (s.assignedPositions || []).some(ap => ap.workerId === workerId) || (s.assignedWorkerIds || []).includes(workerId);
+      if (!isAssigned) return false;
+
+      // Time overlap check: startA < endB && startB < endA
+      const sStart = s.startTime || '00:00';
+      const sEnd = s.endTime || '23:59';
+      const tStart = startTime || '00:00';
+      const tEnd = endTime || '23:59';
+
+      return tStart < sEnd && sStart < tEnd;
+    });
+  };
+
   const handleAssignWorkerToPosition = async (shiftId, slotIndex, workerId) => {
+    const targetShift = shifts.find(s => s.id === shiftId);
+    if (workerId && targetShift) {
+      const conflict = checkDoubleBooking(workerId, shiftId, targetShift.date, targetShift.startTime, targetShift.endTime);
+      if (conflict) {
+        const conflictingWorker = workers.find(w => w.id === workerId);
+        const name = conflictingWorker ? conflictingWorker.name : 'This worker';
+        const confirmDouble = window.confirm(`⚠️ DOUBLE-BOOKING WARNING: ${name} is already assigned to another shift on ${targetShift.date} (${formatTime12h(conflict.startTime)} - ${formatTime12h(conflict.endTime)} at ${conflict.location}). Do you still want to assign them?`);
+        if (!confirmDouble) return;
+      }
+    }
+
     let updatedShift;
     const updatedShifts = shifts.map(s => {
       if (s.id === shiftId) {
@@ -873,16 +964,17 @@ export default function App() {
 
   const handleSeedDemoData = async () => {
     const defaultWorkers = [
-      { id: 'w_1', name: 'Alex Rivera', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocations: ['Downtown Hub'], allowedDepartments: [], allowedPositions: [] },
-      { id: 'w_2', name: 'Jordan Lee', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocations: [], allowedDepartments: ['Management'], allowedPositions: [] },
-      { id: 'w_3', name: 'Sam Taylor', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456', allowedLocations: [], allowedDepartments: [], allowedPositions: [] }
+      { id: 'w_1', firstName: 'Alex', lastName: 'Rivera', name: 'Alex Rivera', email: 'alex@example.com', phone: '(555) 012-3456', pin: '1234', allowedLocations: ['Downtown Hub'], allowedDepartments: [], allowedPositions: [] },
+      { id: 'w_2', firstName: 'Jordan', lastName: 'Lee', name: 'Jordan Lee', email: 'jordan@example.com', phone: '(555) 012-7890', pin: '2345', allowedLocations: [], allowedDepartments: ['Management'], allowedPositions: [] },
+      { id: 'w_3', firstName: 'Sam', lastName: 'Taylor', name: 'Sam Taylor', email: 'sam@example.com', phone: '(555) 019-8822', pin: '3456', allowedLocations: [], allowedDepartments: [], allowedPositions: [] }
     ];
 
     const defaultShifts = [
       { 
         id: 's_1', 
         date: SAMPLE_DATES[0], 
-        timeSlot: 'Morning (07:00 AM - 03:00 PM)', 
+        startTime: '07:00',
+        endTime: '15:00',
         location: 'Downtown Hub', 
         department: 'Front of House',
         requiredCount: 2, 
@@ -905,16 +997,24 @@ export default function App() {
   };
 
   const searchedWorkers = useMemo(() => {
-    if (!searchQuery.trim()) return workers;
+    if (!searchQuery.trim()) return sortedWorkers;
     const q = searchQuery.toLowerCase();
-    return workers.filter(w => 
+    return sortedWorkers.filter(w => 
       w.name.toLowerCase().includes(q) || 
       w.email.toLowerCase().includes(q)
     );
-  }, [workers, searchQuery]);
+  }, [sortedWorkers, searchQuery]);
+
+  // Sorted shifts chronologically: by date first, then by startTime
+  const sortedShifts = useMemo(() => {
+    return [...shifts].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+    });
+  }, [shifts]);
 
   const filteredShifts = useMemo(() => {
-    let list = shifts;
+    let list = sortedShifts;
 
     if (activeTab === 'worker' && currentWorker) {
       const allowedLocs = currentWorker.allowedLocations || [];
@@ -937,7 +1037,7 @@ export default function App() {
     }
     if (selectedDateFilter === 'ALL') return list;
     return list.filter(s => s.date === selectedDateFilter);
-  }, [shifts, selectedDateFilter, showArchivedShifts, activeTab, currentWorker]);
+  }, [sortedShifts, selectedDateFilter, showArchivedShifts, activeTab, currentWorker]);
 
   const filteredPositionsForShift = useMemo(() => {
     return positions.filter(p => {
@@ -1167,13 +1267,13 @@ export default function App() {
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="relative">
-                  {workers.length > 0 ? (
+                  {sortedWorkers.length > 0 ? (
                     <select
                       value={selectedWorkerId}
                       onChange={(e) => handleWorkerChange(e.target.value)}
                       className="w-full sm:w-64 bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block p-3 pr-8 font-medium shadow-sm cursor-pointer"
                     >
-                      {workers.map(w => (
+                      {sortedWorkers.map(w => (
                         <option key={w.id} value={w.id}>
                           {w.name}
                         </option>
@@ -1334,12 +1434,17 @@ export default function App() {
                       const targetCount = shift.idealCount || requiredCount;
                       const locColor = getLocationColor(shift.location);
 		      const deptColor = getDepartmentColor(shift.department);
+                      const timeStr = `${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)}`;
 
                       return (
                         <div 
                           key={shift.id} 
                           onClick={() => setInspectingShift(shift)}
-                          className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md overflow-hidden"
+                          className={`rounded-2xl border shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md overflow-hidden bg-white ${
+                            isAssigned 
+                              ? 'ring-4 ring-emerald-500 border-emerald-600 shadow-emerald-200/50 shadow-lg' 
+                              : 'border-slate-200'
+                          }`}
                         >
                           <div 
                             className="p-5 text-white space-y-3"
@@ -1350,9 +1455,9 @@ export default function App() {
                                 {formatDate(shift.date)}
                               </span>
                               {isAssigned && (
-                                <span className="text-[11px] font-extrabold bg-white text-slate-900 px-2.5 py-1 rounded-full flex items-center space-x-1 shadow">
-                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
-                                  <span>Assigned</span>
+                                <span className="text-[11px] font-black bg-emerald-600 text-white px-3 py-1 rounded-full flex items-center space-x-1 shadow-md border border-emerald-400 animate-pulse">
+                                  <CheckCircle className="w-3.5 h-3.5 text-white" />
+                                  <span>Assigned to You</span>
                                 </span>
                               )}
                             </div>
@@ -1360,7 +1465,7 @@ export default function App() {
                             <div>
                               <h4 className="font-black text-white text-sm flex items-center space-x-1.5">
                                 <Clock className="w-4 h-4 text-white/90" />
-                                <span>{shift.timeSlot}</span>
+                                <span>{timeStr}</span>
                               </h4>
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/90 font-medium">
                                 <span className="flex items-center space-x-1">
@@ -1520,7 +1625,8 @@ export default function App() {
                       setEditingShift(null);
                       setNewShift({
                         date: SAMPLE_DATES[0],
-                        timeSlot: 'Morning (08:00 AM - 04:00 PM)',
+                        startTime: '08:00',
+                        endTime: '16:00',
                         location: locationNames[0] || 'Main Branch',
                         department: departmentNames[0] || 'Front of House',
                         positionsList: []
@@ -1650,6 +1756,7 @@ export default function App() {
                       const targetCount = shift.idealCount || requiredCount;
                       const locColor = getLocationColor(shift.location);
 		      const deptColor = getDepartmentColor(shift.department);
+                      const timeStr = `${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)}`;
 
                       const isWorkerAssignedInShift = (wId) => assignedPositions.some(ap => ap.workerId === wId);
 
@@ -1665,7 +1772,7 @@ export default function App() {
                               </span>
                               <h3 className="font-bold text-white text-sm flex items-center space-x-1.5">
                                 <Clock className="w-4 h-4 text-white/90" />
-                                <span>{shift.timeSlot}</span>
+                                <span>{timeStr}</span>
                               </h3>
                               <span className="text-xs text-white/90">({shift.location} • {shift.department || 'General'})</span>
                             </div>
@@ -1686,7 +1793,8 @@ export default function App() {
                                   setEditingShift(shift);
                                   setNewShift({
                                     date: shift.date,
-                                    timeSlot: shift.timeSlot,
+                                    startTime: shift.startTime || '08:00',
+                                    endTime: shift.endTime || '16:00',
                                     location: shift.location,
                                     department: shift.department || departmentNames[0],
                                     positionsList: shift.positionsList || []
@@ -1721,14 +1829,14 @@ export default function App() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {shift.positionsList.map((posSlot, idx) => {
                                   const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
-                                  const assignedWorker = workers.find(w => w.id === assignment?.workerId);
+                                  const assignedWorker = sortedWorkers.find(w => w.id === assignment?.workerId);
 
                                   const preferredWorkers = [];
                                   const availableWorkers = [];
                                   const noResponseWorkers = [];
                                   const unavailableWorkers = [];
 
-                                  workers.forEach(w => {
+                                  sortedWorkers.forEach(w => {
                                     const pref = availabilities[w.id]?.[shift.id];
                                     if (pref === 'preferred') preferredWorkers.push(w);
                                     else if (pref === 'available') availableWorkers.push(w);
@@ -1736,7 +1844,6 @@ export default function App() {
                                     else noResponseWorkers.push(w);
                                   });
 
-                                  // Helper to check if a worker has any restriction mismatch for this shift
                                   const getRestrictionWarning = (w) => {
                                     const allowedLocs = w.allowedLocations || [];
                                     const allowedDepts = w.allowedDepartments || [];
@@ -1821,12 +1928,7 @@ export default function App() {
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => {
-                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
-                                                      return;
-                                                    }
-                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
-                                                  }}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
@@ -1851,12 +1953,7 @@ export default function App() {
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => {
-                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
-                                                      return;
-                                                    }
-                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
-                                                  }}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
@@ -1881,12 +1978,7 @@ export default function App() {
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => {
-                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
-                                                      return;
-                                                    }
-                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
-                                                  }}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
@@ -1902,16 +1994,12 @@ export default function App() {
 
                                             {unavailableWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
-                                              const warning = getRestrictionWarning(w);
                                               return (
                                                 <button
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => {
-                                                    if (!window.confirm(`${w.name} is marked as Unavailable! Do you want to override and assign them?`)) return;
-                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
-                                                  }}
+                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
                                                   className="text-[10px] font-semibold px-2 py-1 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 opacity-75"
                                                   title="Marked Unavailable - Click to override & assign"
                                                 >
@@ -2091,7 +2179,7 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
-              {shifts
+              {sortedShifts
                 .filter(s => {
                   if (reportFilterStartDate && s.date < reportFilterStartDate) return false;
                   if (reportFilterEndDate && s.date > reportFilterEndDate) return false;
@@ -2103,13 +2191,12 @@ export default function App() {
                   }
                   return true;
                 })
-                .sort((a, b) => a.date.localeCompare(b.date))
                 .length === 0 ? (
                   <div className="text-center py-12 text-slate-400 text-xs">
                     No shifts match the selected report filter criteria.
                   </div>
                 ) : (
-                  shifts
+                  sortedShifts
                     .filter(s => {
                       if (reportFilterStartDate && s.date < reportFilterStartDate) return false;
                       if (reportFilterEndDate && s.date > reportFilterEndDate) return false;
@@ -2121,41 +2208,43 @@ export default function App() {
                       }
                       return true;
                     })
-                    .sort((a, b) => a.date.localeCompare(b.date))
-                    .map(shift => (
-                      <div key={shift.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 print:border-slate-300 print:bg-white">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <div>
-                            <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded mr-2">
-                              {formatDate(shift.date)}
+                    .map(shift => {
+                      const timeStr = `${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)}`;
+                      return (
+                        <div key={shift.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 print:border-slate-300 print:bg-white">
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <div>
+                              <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded mr-2">
+                                {formatDate(shift.date)}
+                              </span>
+                              <span className="text-xs font-bold text-slate-900">{timeStr}</span>
+                            </div>
+                            <span className="text-xs text-slate-600 font-medium">
+                              {shift.location} {shift.department ? `• ${shift.department}` : ''}
                             </span>
-                            <span className="text-xs font-bold text-slate-900">{shift.timeSlot}</span>
                           </div>
-                          <span className="text-xs text-slate-600 font-medium">
-                            {shift.location} {shift.department ? `• ${shift.department}` : ''}
-                          </span>
-                        </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-                          {(shift.positionsList || []).map((posSlot, idx) => {
-                            if (reportFilterPosition !== 'ALL' && posSlot.positionName !== reportFilterPosition) return null;
-                            const assignment = (shift.assignedPositions || []).find(ap => ap.slotIndex === idx);
-                            const assignedWorker = workers.find(w => w.id === assignment?.workerId);
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                            {(shift.positionsList || []).map((posSlot, idx) => {
+                              if (reportFilterPosition !== 'ALL' && posSlot.positionName !== reportFilterPosition) return null;
+                              const assignment = (shift.assignedPositions || []).find(ap => ap.slotIndex === idx);
+                              const assignedWorker = sortedWorkers.find(w => w.id === assignment?.workerId);
 
-                            return (
-                              <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                                <span className="font-bold text-slate-700">{posSlot.positionName}</span>
-                                <span className={`font-semibold px-2 py-0.5 rounded ${
-                                  assignedWorker ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
-                                }`}>
-                                  {assignedWorker ? assignedWorker.name : 'Unassigned'}
-                                </span>
-                              </div>
-                            );
-                          })}
+                              return (
+                                <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                  <span className="font-bold text-slate-700">{posSlot.positionName}</span>
+                                  <span className={`font-semibold px-2 py-0.5 rounded ${
+                                    assignedWorker ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                                  }`}>
+                                    {assignedWorker ? assignedWorker.name : 'Unassigned'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                 )}
             </div>
 
@@ -2199,7 +2288,9 @@ export default function App() {
                 <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md">
                   {formatDate(inspectingShift.date)}
                 </span>
-                <h3 className="text-lg font-black text-slate-900 mt-1">{inspectingShift.timeSlot}</h3>
+                <h3 className="text-lg font-black text-slate-900 mt-1">
+                  {formatTime12h(inspectingShift.startTime)} - {formatTime12h(inspectingShift.endTime)}
+                </h3>
                 <p className="text-xs text-slate-500">
                   {inspectingShift.location} {inspectingShift.department ? `• ${inspectingShift.department}` : ''}
                 </p>
@@ -2220,7 +2311,7 @@ export default function App() {
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {inspectingShift.positionsList.map((pos, idx) => {
                     const assigned = (inspectingShift.assignedPositions || []).find(ap => ap.slotIndex === idx);
-                    const workerObj = workers.find(w => w.id === assigned?.workerId);
+                    const workerObj = sortedWorkers.find(w => w.id === assigned?.workerId);
 
                     return (
                       <div key={idx} className="p-3 rounded-xl border flex items-center justify-between bg-slate-50 border-slate-200">
@@ -2283,15 +2374,26 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSaveProfile} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editingProfile.name}
-                  onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingProfile.firstName || ''}
+                    onChange={(e) => setEditingProfile({ ...editingProfile, firstName: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    value={editingProfile.lastName || ''}
+                    onChange={(e) => setEditingProfile({ ...editingProfile, lastName: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
               </div>
 
               <div>
@@ -2335,9 +2437,9 @@ export default function App() {
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
-                      {locationNames.map((loc, i) => {
+                      {locations.map((loc, i) => {
                         const currentAllowed = editingProfile.allowedLocations || [];
-                        const isChecked = currentAllowed.includes(loc);
+                        const isChecked = currentAllowed.includes(loc.name);
                         return (
                           <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                             <input
@@ -2345,13 +2447,13 @@ export default function App() {
                               checked={isChecked}
                               onChange={(e) => {
                                 const next = e.target.checked 
-                                  ? [...currentAllowed, loc] 
-                                  : currentAllowed.filter(l => l !== loc);
+                                  ? [...currentAllowed, loc.name] 
+                                  : currentAllowed.filter(l => l !== loc.name);
                                 setEditingProfile({ ...editingProfile, allowedLocations: next });
                               }}
                               className="rounded text-indigo-600 focus:ring-indigo-500"
                             />
-                            <span className="truncate">{loc}</span>
+                            <span className="truncate">{loc.name}</span>
                           </label>
                         );
                       })}
@@ -2361,9 +2463,9 @@ export default function App() {
                   <div>
                     <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                     <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-lg border border-slate-300 max-h-32 overflow-y-auto">
-                      {departmentNames.map((dept, i) => {
+                      {departments.map((dept, i) => {
                         const currentAllowed = editingProfile.allowedDepartments || [];
-                        const isChecked = currentAllowed.includes(dept);
+                        const isChecked = currentAllowed.includes(dept.name);
                         return (
                           <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                             <input
@@ -2371,13 +2473,13 @@ export default function App() {
                               checked={isChecked}
                               onChange={(e) => {
                                 const next = e.target.checked 
-                                  ? [...currentAllowed, dept] 
-                                  : currentAllowed.filter(d => d !== dept);
+                                  ? [...currentAllowed, dept.name] 
+                                  : currentAllowed.filter(d => d !== dept.name);
                                 setEditingProfile({ ...editingProfile, allowedDepartments: next });
                               }}
                               className="rounded text-indigo-600 focus:ring-indigo-500"
                             />
-                            <span className="truncate">{dept}</span>
+                            <span className="truncate">{dept.name}</span>
                           </label>
                         );
                       })}
@@ -2995,16 +3097,28 @@ export default function App() {
             </div>
 
             <form onSubmit={handleCreateWorker} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Jane Doe"
-                  value={newWorker.name}
-                  onChange={(e) => setNewWorker({ ...newWorker, name: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Jane"
+                    value={newWorker.firstName}
+                    onChange={(e) => setNewWorker({ ...newWorker, firstName: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Doe"
+                    value={newWorker.lastName}
+                    onChange={(e) => setNewWorker({ ...newWorker, lastName: e.target.value })}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
               </div>
 
               <div>
@@ -3047,20 +3161,20 @@ export default function App() {
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Venues Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                    {locationNames.map((loc, i) => (
+                    {locations.map((loc, i) => (
                       <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={newWorker.allowedLocations.includes(loc)}
+                          checked={newWorker.allowedLocations.includes(loc.name)}
                           onChange={(e) => {
                             const next = e.target.checked 
-                              ? [...newWorker.allowedLocations, loc] 
-                              : newWorker.allowedLocations.filter(l => l !== loc);
+                              ? [...newWorker.allowedLocations, loc.name] 
+                              : newWorker.allowedLocations.filter(l => l !== loc.name);
                             setNewWorker({ ...newWorker, allowedLocations: next });
                           }}
                           className="rounded text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span>{loc}</span>
+                        <span>{loc.name}</span>
                       </label>
                     ))}
                   </div>
@@ -3069,20 +3183,20 @@ export default function App() {
                 <div>
                   <span className="block text-[11px] font-bold text-slate-700 mb-1">Sports Restricted to:</span>
                   <div className="bg-white p-2 rounded-lg border border-slate-300 max-h-28 overflow-y-auto space-y-1">
-                    {departmentNames.map((dept, i) => (
+                    {departments.map((dept, i) => (
                       <label key={i} className="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={newWorker.allowedDepartments.includes(dept)}
+                          checked={newWorker.allowedDepartments.includes(dept.name)}
                           onChange={(e) => {
                             const next = e.target.checked 
-                              ? [...newWorker.allowedDepartments, dept] 
-                              : newWorker.allowedDepartments.filter(d => d !== dept);
+                              ? [...newWorker.allowedDepartments, dept.name] 
+                              : newWorker.allowedDepartments.filter(d => d !== dept.name);
                             setNewWorker({ ...newWorker, allowedDepartments: next });
                           }}
                           className="rounded text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span>{dept}</span>
+                        <span>{dept.name}</span>
                       </label>
                     ))}
                   </div>
@@ -3131,7 +3245,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD / EDIT SHIFT MODAL */}
+      {/* ADD / EDIT SHIFT MODAL WITH START & END TIMES */}
       {showAddShiftModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -3145,25 +3259,35 @@ export default function App() {
             </div>
 
             <form onSubmit={handleCreateShift} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date</label>
+                <input
+                  type="date"
+                  required
+                  value={newShift.date}
+                  onChange={(e) => setNewShift({ ...newShift, date: e.target.value })}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Start Time</label>
                   <input
-                    type="date"
+                    type="time"
                     required
-                    value={newShift.date}
-                    onChange={(e) => setNewShift({ ...newShift, date: e.target.value })}
+                    value={newShift.startTime}
+                    onChange={(e) => setNewShift({ ...newShift, startTime: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Time</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">End Time</label>
                   <input
-                    type="text"
+                    type="time"
                     required
-                    placeholder="e.g. 4:00 PM)"
-                    value={newShift.timeSlot}
-                    onChange={(e) => setNewShift({ ...newShift, timeSlot: e.target.value })}
+                    value={newShift.endTime}
+                    onChange={(e) => setNewShift({ ...newShift, endTime: e.target.value })}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl"
                   />
                 </div>
@@ -3314,11 +3438,12 @@ export default function App() {
                   .filter(s => (s.assignedPositions || []).some(ap => ap.workerId === currentWorker.id) || s.assignedWorkerIds?.includes(currentWorker.id))
                   .map(s => {
                     const myAssignment = (s.assignedPositions || []).find(ap => ap.workerId === currentWorker.id);
+                    const timeStr = `${formatTime12h(s.startTime)} - ${formatTime12h(s.endTime)}`;
                     return (
                       <div key={s.id} className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between">
                         <div>
                           <span className="text-[11px] font-bold text-indigo-700">{formatDate(s.date)}</span>
-                          <h4 className="font-bold text-slate-800 text-xs mt-0.5">{s.timeSlot}</h4>
+                          <h4 className="font-bold text-slate-800 text-xs mt-0.5">{timeStr}</h4>
                           <p className="text-[11px] text-slate-500">
                             {s.location} {s.department ? `• ${s.department}` : ''}
                             {myAssignment && ` • Position: ${s.positionsList?.[myAssignment.slotIndex]?.positionName || ''}`}
