@@ -1212,22 +1212,6 @@ export default function App() {
               </div>
             </div>
 
-            {currentWorker && ((currentWorker.allowedLocations || []).length > 0 || (currentWorker.allowedDepartments || []).length > 0 || (currentWorker.allowedPositions || []).length > 0) && (
-              <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3 text-xs flex items-center space-x-2 flex-wrap gap-1">
-                <Filter className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span><strong>Filtered Shift View:</strong></span>
-                {(currentWorker.allowedLocations || []).length > 0 && (
-                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Locations: {currentWorker.allowedLocations.join(', ')}</span>
-                )}
-                {(currentWorker.allowedDepartments || []).length > 0 && (
-                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Depts: {currentWorker.allowedDepartments.join(', ')}</span>
-                )}
-                {(currentWorker.allowedPositions || []).length > 0 && (
-                  <span className="font-semibold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Positions: {currentWorker.allowedPositions.join(', ')}</span>
-                )}
-              </div>
-            )}
-
             <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
               <button
                 onClick={() => setSelectedDateFilter('ALL')}
