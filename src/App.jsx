@@ -1351,8 +1351,8 @@ export default function App() {
                       const assignedCount = assignedSlots.length;
                       const requiredCount = shift.requiredCount || 1;
                       const targetCount = shift.idealCount || requiredCount;
-
                       const locColor = getLocationColor(shift.location);
+		      const deptColor = getDepartmentColor(shift.department);
 
                       return (
                         <div 
@@ -1670,6 +1670,7 @@ export default function App() {
                       const requiredCount = shift.requiredCount || 0;
                       const targetCount = shift.idealCount || requiredCount;
                       const locColor = getLocationColor(shift.location);
+		      const deptColor = getDepartmentColor(shift.department);
 
                       const isWorkerAssignedInShift = (wId) => assignedPositions.some(ap => ap.workerId === wId);
 
