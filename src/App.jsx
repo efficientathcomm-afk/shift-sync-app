@@ -1363,7 +1363,7 @@ export default function App() {
                           {/* TOP HALF COLOR CODED BY LOCATION */}
                           <div 
                             className="p-5 text-white space-y-3"
-                            style={{ backgroundColor: locColor }}
+                            style={{ backgroundColor: deptColor }}
                           >
                             <div className="flex items-start justify-between">
                               <span className="text-xs font-bold bg-white/20 text-white px-2.5 py-1 rounded-lg">
@@ -1678,7 +1678,7 @@ export default function App() {
                           {/* TOP HALF COLOR CODED BY LOCATION */}
                           <div 
                             className="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                            style={{ backgroundColor: locColor }}
+                            style={{ backgroundColor: deptColor }}
                           >
                             <div className="flex items-center space-x-3">
                               <span className="text-xs font-black bg-white/20 text-white px-3 py-1 rounded-xl">
