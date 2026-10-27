@@ -126,7 +126,7 @@ export default function App() {
   ]);
 
   // Global Manager Notification Banner state
-  const [activeNotification, setActiveNotification] = useState(null); // { type: 'alert'|'message', text: '' }
+  const [activeNotification, setActiveNotification] = useState(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [newNotifType, setNewNotifType] = useState('message');
   const [newNotifText, setNewNotifText] = useState('');
@@ -402,7 +402,7 @@ export default function App() {
   }, [workers, selectedWorkerId]);
 
   // Check if current worker has a shift scheduled today
-  const todayDateString = SAMPLE_DATES[0]; // 'Today' date string YYYY-MM-DD
+  const todayDateString = SAMPLE_DATES[0];
   const workerShiftToday = useMemo(() => {
     if (!currentWorker) return null;
     return shifts.find(s => {
@@ -462,19 +462,11 @@ export default function App() {
     localStorage.setItem('shiftsync_shifts', JSON.stringify(updatedList));
   };
 
-  // Helper to get location color
   const getLocationColor = (locName) => {
     const locObj = locations.find(l => l.name === locName);
     return locObj?.color || '#4f46e5';
   };
 
-  // Helper to get department color
-  const getDepartmentColor = (deptName) => {
-    const deptObj = departments.find(d => d.name === deptName);
-    return deptObj?.color || '#6366f1';
-  };
-
-  // Publish / Clear Notification Banner
   const handlePublishNotification = async (e) => {
     e.preventDefault();
     const notifObj = newNotifText.trim() ? { type: newNotifType, text: newNotifText.trim() } : null;
@@ -518,7 +510,6 @@ export default function App() {
     }
   };
 
-  // Org Structure Handlers
   const handleAddLocation = async () => {
     if (!newLocName.trim() || locations.some(l => l.name === newLocName.trim())) return;
     const updated = [...locations, { name: newLocName.trim(), color: newLocColor }];
@@ -1360,7 +1351,6 @@ export default function App() {
                           onClick={() => setInspectingShift(shift)}
                           className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between transition-all cursor-pointer hover:shadow-md overflow-hidden"
                         >
-                          {/* TOP HALF COLOR CODED BY LOCATION */}
                           <div 
                             className="p-5 text-white space-y-3"
                             style={{ backgroundColor: deptColor }}
@@ -1396,7 +1386,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* BOTTOM HALF STATUS & AVAILABILITY */}
                           <div className="p-5 space-y-3 bg-white">
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                               <div className="flex justify-between items-center text-[11px]">
@@ -1676,7 +1665,6 @@ export default function App() {
 
                       return (
                         <div key={shift.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
-                          {/* TOP HALF COLOR CODED BY LOCATION */}
                           <div 
                             className="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                             style={{ backgroundColor: deptColor }}
@@ -1730,7 +1718,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* BOTTOM HALF INTERACTIVE ASSIGNMENT GRID */}
                           <div className="p-5 pt-0 space-y-3">
                             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mt-2">
                               Position Slots & Interactive Staff Assignment
@@ -1758,6 +1745,26 @@ export default function App() {
                                     else if (pref === 'unavailable') unavailableWorkers.push(w);
                                     else noResponseWorkers.push(w);
                                   });
+
+                                  // Helper to check if a worker has any restriction mismatch for this shift
+                                  const getRestrictionWarning = (w) => {
+                                    const allowedLocs = w.allowedLocations || [];
+                                    const allowedDepts = w.allowedDepartments || [];
+                                    const allowedPoss = w.allowedPositions || [];
+
+                                    const locMismatch = allowedLocs.length > 0 && !allowedLocs.includes(shift.location);
+                                    const deptMismatch = allowedDepts.length > 0 && shift.department && !allowedDepts.includes(shift.department);
+                                    const posMismatch = allowedPoss.length > 0 && !allowedPoss.includes(posSlot.positionName);
+
+                                    if (locMismatch || deptMismatch || posMismatch) {
+                                      const reasons = [];
+                                      if (locMismatch) reasons.push('Venue mismatch');
+                                      if (deptMismatch) reasons.push('Sport mismatch');
+                                      if (posMismatch) reasons.push('Position mismatch');
+                                      return reasons.join(', ');
+                                    }
+                                    return null;
+                                  };
 
                                   return (
                                     <div 
@@ -1794,7 +1801,11 @@ export default function App() {
                                             </div>
                                             <div>
                                               <span className="text-xs font-bold text-slate-900 block">{assignedWorker.name}</span>
-                                              <span className="text-[10px] text-slate-400">Assigned</span>
+                                              {getRestrictionWarning(assignedWorker) && (
+                                                <span className="text-[10px] text-amber-600 font-bold block flex items-center gap-1">
+                                                  <AlertCircle className="w-3 h-3" /> Warning: {getRestrictionWarning(assignedWorker)}
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
                                           <button
@@ -1814,74 +1825,103 @@ export default function App() {
                                           <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
                                             {preferredWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              const warning = getRestrictionWarning(w);
                                               return (
                                                 <button
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  onClick={() => {
+                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
+                                                      return;
+                                                    }
+                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
+                                                  }}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
-                                                      : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                      : warning
+                                                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                        : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm'
                                                   }`}
-                                                  title={alreadyInShift ? 'Already assigned to another slot in this shift' : 'Click to assign (Preferred)'}
+                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Preferred)'}
                                                 >
                                                   <Star className="w-3 h-3 fill-current text-amber-500" />
                                                   <span>{formatShortName(w.name)}</span>
+                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
                                                 </button>
                                               );
                                             })}
 
                                             {availableWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              const warning = getRestrictionWarning(w);
                                               return (
                                                 <button
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  onClick={() => {
+                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
+                                                      return;
+                                                    }
+                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
+                                                  }}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
-                                                      : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
+                                                      : warning
+                                                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
                                                   }`}
-                                                  title={alreadyInShift ? 'Already assigned' : 'Click to assign (Available)'}
+                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Available)'}
                                                 >
                                                   <CheckCircle className="w-3 h-3 text-emerald-600" />
                                                   <span>{formatShortName(w.name)}</span>
+                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
                                                 </button>
                                               );
                                             })}
 
                                             {noResponseWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              const warning = getRestrictionWarning(w);
                                               return (
                                                 <button
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  onClick={() => {
+                                                    if (warning && !window.confirm(`${w.name} has a restriction warning (${warning}). Do you still want to assign them?`)) {
+                                                      return;
+                                                    }
+                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
+                                                  }}
                                                   className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
                                                     alreadyInShift
                                                       ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
                                                       : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-sm'
                                                   }`}
-                                                  title={alreadyInShift ? 'Already assigned' : 'Click to assign (No Response)'}
+                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign'}
                                                 >
                                                   <span>{formatShortName(w.name)}</span>
+                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
                                                 </button>
                                               );
                                             })}
 
                                             {unavailableWorkers.map(w => {
                                               const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                              const warning = getRestrictionWarning(w);
                                               return (
                                                 <button
                                                   key={w.id}
                                                   type="button"
                                                   disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                  onClick={() => {
+                                                    if (!window.confirm(`${w.name} is marked as Unavailable! Do you want to override and assign them?`)) return;
+                                                    handleAssignWorkerToPosition(shift.id, idx, w.id);
+                                                  }}
                                                   className="text-[10px] font-semibold px-2 py-1 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 opacity-75"
                                                   title="Marked Unavailable - Click to override & assign"
                                                 >
@@ -2402,7 +2442,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ORGANIZATIONAL SETUP MODAL (WITH COLOR PICKERS) */}
+      {/* ORGANIZATIONAL SETUP MODAL */}
       {showOrgStructureModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
@@ -2416,7 +2456,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* LOCATIONS SECTION WITH COLOR PICKER */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-indigo-600" />
@@ -2510,7 +2549,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* DEPARTMENTS SECTION WITH COLOR PICKER */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Layers className="w-4 h-4 text-indigo-600" />
@@ -2604,7 +2642,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* POSITIONS SECTION */}
             <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="text-xs font-black text-slate-800 flex items-center space-x-1.5 uppercase tracking-wider">
                 <Briefcase className="w-4 h-4 text-indigo-600" />
