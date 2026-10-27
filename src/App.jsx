@@ -1196,7 +1196,7 @@ const formatDate = (dateString) => {
                       : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
                   }`}
                 >
-                  {idx === 0 ? 'Today' : date}
+                  {idx === 0 ? 'Today' : formatDate{date)}
                 </button>
               ))}
             </div>
