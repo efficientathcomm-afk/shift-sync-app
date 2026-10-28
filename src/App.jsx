@@ -1067,9 +1067,9 @@ export default function App() {
       totalTarget += target;
       totalAssigned += assigned;
 
-      if (assigned === 0) {
+      if (assigned < required) {
         needsStaffCount++;
-      } else if (assigned < required) {
+      } else if (assigned < target) {
         openSlotsCount++;
       } else {
         fullyStaffedCount++;
