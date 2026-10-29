@@ -1060,6 +1060,7 @@ export default function App() {
     let needsStaffCount = 0;
     let openSlotsCount = 0;
     let fullyStaffedCount = 0;
+    let availabilityConflictsCount = 0;
 
     shifts.forEach(s => {
       const assigned = s.assignedPositions ? s.assignedPositions.length : (s.assignedWorkerIds?.length || 0);
@@ -1077,6 +1078,13 @@ export default function App() {
       } else {
         fullyStaffedCount++;
       }
+
+      // Count availability conflicts (assigned worker marked unavailable)
+      (s.assignedPositions || []).forEach(ap => {
+        if (availabilities[ap.workerId]?.[s.id] === 'unavailable') {
+          availabilityConflictsCount++;
+        }
+      });
     });
 
     return {
@@ -1087,9 +1095,10 @@ export default function App() {
       needsStaffCount,
       openSlotsCount,
       fullyStaffedCount,
+      availabilityConflictsCount,
       coveragePercent: totalNeeded === 0 ? 100 : Math.min(100, Math.round((totalAssigned / totalNeeded) * 100))
     };
-  }, [shifts]);
+  }, [shifts, availabilities]);
 
   const togglePositionInShiftNew = (pos) => {
     setNewShift(prev => {
@@ -1185,7 +1194,7 @@ export default function App() {
 
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold whitespace-nowrap">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>{scheduleHealthSummary.openSlotsCount} Open Slots</span>
+              <span>{scheduleHealthSummary.openSlotsCount} Open Shifts</span>
             </div>
 
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold whitespace-nowrap">
@@ -1578,6 +1587,24 @@ export default function App() {
         {/* MANAGER VIEW TAB */}
         {activeTab === 'manager' && (
           <div className="space-y-6 print:hidden">
+
+            {/* MANAGER AVAILABILITY CONFLICT ALERT BANNER */}
+            {scheduleHealthSummary.availabilityConflictsCount > 0 && (
+              <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-full bg-rose-600 text-white font-black flex items-center justify-center shrink-0 shadow-inner">
+                    !
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider">Availability Conflict Alert</h4>
+                    <p className="text-xs font-medium mt-0.5">
+                      There {scheduleHealthSummary.availabilityConflictsCount === 1 ? 'is 1 assigned worker' : `are ${scheduleHealthSummary.availabilityConflictsCount} assigned workers`} who {scheduleHealthSummary.availabilityConflictsCount === 1 ? 'has' : 'have'} changed their availability status to <strong className="text-rose-950 underline">Unavailable</strong> for their scheduled shift! Review below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">Manager Control Center</span>
