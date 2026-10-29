@@ -186,6 +186,9 @@ export default function App() {
   const [showAddShiftModal, setShowAddShiftModal] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
 
+  // Collapsible manager shift cards state (store set of expanded shift IDs, default all collapsed)
+  const [expandedShiftIds, setExpandedShiftIds] = useState(new Set());
+
   // Profile being edited
   const [editingProfile, setEditingProfile] = useState(null);
 
@@ -1730,13 +1733,28 @@ export default function App() {
                     ))}
                   </div>
 
-                  <button
-                    onClick={() => setShowArchivedShifts(!showArchivedShifts)}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center space-x-1 px-2 py-1"
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>{showArchivedShifts ? 'Hide Archived Shifts' : 'Show All Shifts'}</span>
-                  </button>
+                  <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                    <button
+                      onClick={() => {
+                        if (expandedShiftIds.size === filteredShifts.length) {
+                          setExpandedShiftIds(new Set());
+                        } else {
+                          setExpandedShiftIds(new Set(filteredShifts.map(s => s.id)));
+                        }
+                      }}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition"
+                    >
+                      {expandedShiftIds.size === filteredShifts.length ? 'Collapse All' : 'Expand All'}
+                    </button>
+
+                    <button
+                      onClick={() => setShowArchivedShifts(!showArchivedShifts)}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center space-x-1 px-2 py-1"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>{showArchivedShifts ? 'Hide Archived Shifts' : 'Show All Shifts'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {filteredShifts.length === 0 ? (
@@ -1757,13 +1775,22 @@ export default function App() {
                       const locColor = getLocationColor(shift.location);
 		      const deptColor = getDepartmentColor(shift.department);
                       const timeStr = `${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)}`;
+                      const isExpanded = expandedShiftIds.has(shift.id);
+
+                      const toggleExpand = () => {
+                        const next = new Set(expandedShiftIds);
+                        if (next.has(shift.id)) next.delete(shift.id);
+                        else next.add(shift.id);
+                        setExpandedShiftIds(next);
+                      };
 
                       const isWorkerAssignedInShift = (wId) => assignedPositions.some(ap => ap.workerId === wId);
 
                       return (
-                        <div key={shift.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+                        <div key={shift.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-2">
                           <div 
-                            className="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                            onClick={toggleExpand}
+                            className="p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer hover:opacity-95 transition"
                             style={{ backgroundColor: deptColor }}
                           >
                             <div className="flex items-center space-x-3">
@@ -1777,7 +1804,7 @@ export default function App() {
                               <span className="text-xs text-white/90">({shift.location} • {shift.department || 'General'})</span>
                             </div>
 
-                            <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-3" onClick={(e) => e.stopPropagation()}>
                               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white text-slate-900 shadow">
                                 {assignedCount} / {requiredCount} Required ({targetCount} Target)
                               </span>
@@ -1813,209 +1840,231 @@ export default function App() {
                               >
                                 <XCircle className="w-5 h-5" />
                               </button>
+                              <button
+                                onClick={toggleExpand}
+                                className="text-white p-1 transition ml-2"
+                                title={isExpanded ? 'Collapse' : 'Expand'}
+                              >
+                                <ChevronRight className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                              </button>
                             </div>
                           </div>
 
-                          <div className="p-5 pt-0 space-y-3">
-                            <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mt-2">
-                              Position Slots & Interactive Staff Assignment
-                            </span>
+                          {isExpanded && (
+                            <div className="p-5 pt-2 space-y-3">
+                              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mt-2">
+                                Position Slots & Interactive Staff Assignment
+                              </span>
 
-                            {(!shift.positionsList || shift.positionsList.length === 0) ? (
-                              <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                No specific positions configured for this shift. Click the edit icon above to add required positions.
-                              </p>
-                            ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {shift.positionsList.map((posSlot, idx) => {
-                                  const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
-                                  const assignedWorker = sortedWorkers.find(w => w.id === assignment?.workerId);
+                              {(!shift.positionsList || shift.positionsList.length === 0) ? (
+                                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                  No specific positions configured for this shift. Click the edit icon above to add required positions.
+                                </p>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {shift.positionsList.map((posSlot, idx) => {
+                                    const assignment = assignedPositions.find(ap => ap.slotIndex === idx);
+                                    const assignedWorker = sortedWorkers.find(w => w.id === assignment?.workerId);
 
-                                  const preferredWorkers = [];
-                                  const availableWorkers = [];
-                                  const noResponseWorkers = [];
-                                  const unavailableWorkers = [];
+                                    const preferredWorkers = [];
+                                    const availableWorkers = [];
+                                    const noResponseWorkers = [];
+                                    const unavailableWorkers = [];
 
-                                  sortedWorkers.forEach(w => {
-                                    const pref = availabilities[w.id]?.[shift.id];
-                                    if (pref === 'preferred') preferredWorkers.push(w);
-                                    else if (pref === 'available') availableWorkers.push(w);
-                                    else if (pref === 'unavailable') unavailableWorkers.push(w);
-                                    else noResponseWorkers.push(w);
-                                  });
+                                    sortedWorkers.forEach(w => {
+                                      const pref = availabilities[w.id]?.[shift.id];
+                                      if (pref === 'preferred') preferredWorkers.push(w);
+                                      else if (pref === 'available') availableWorkers.push(w);
+                                      else if (pref === 'unavailable') unavailableWorkers.push(w);
+                                      else noResponseWorkers.push(w);
+                                    });
 
-                                  const getRestrictionWarning = (w) => {
-                                    const allowedLocs = w.allowedLocations || [];
-                                    const allowedDepts = w.allowedDepartments || [];
-                                    const allowedPoss = w.allowedPositions || [];
+                                    const getRestrictionWarning = (w) => {
+                                      const allowedLocs = w.allowedLocations || [];
+                                      const allowedDepts = w.allowedDepartments || [];
+                                      const allowedPoss = w.allowedPositions || [];
 
-                                    const locMismatch = allowedLocs.length > 0 && !allowedLocs.includes(shift.location);
-                                    const deptMismatch = allowedDepts.length > 0 && shift.department && !allowedDepts.includes(shift.department);
-                                    const posMismatch = allowedPoss.length > 0 && !allowedPoss.includes(posSlot.positionName);
+                                      const locMismatch = allowedLocs.length > 0 && !allowedLocs.includes(shift.location);
+                                      const deptMismatch = allowedDepts.length > 0 && shift.department && !allowedDepts.includes(shift.department);
+                                      const posMismatch = allowedPoss.length > 0 && !allowedPoss.includes(posSlot.positionName);
 
-                                    if (locMismatch || deptMismatch || posMismatch) {
-                                      const reasons = [];
-                                      if (locMismatch) reasons.push('Venue mismatch');
-                                      if (deptMismatch) reasons.push('Sport mismatch');
-                                      if (posMismatch) reasons.push('Position mismatch');
-                                      return reasons.join(', ');
-                                    }
-                                    return null;
-                                  };
+                                      if (locMismatch || deptMismatch || posMismatch) {
+                                        const reasons = [];
+                                        if (locMismatch) reasons.push('Venue mismatch');
+                                        if (deptMismatch) reasons.push('Sport mismatch');
+                                        if (posMismatch) reasons.push('Position mismatch');
+                                        return reasons.join(', ');
+                                      }
+                                      return null;
+                                    };
 
-                                  return (
-                                    <div 
-                                      key={idx} 
-                                      className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 ${
-                                        assignedWorker
-                                          ? 'bg-slate-50 border-slate-300'
-                                          : posSlot.required
-                                            ? 'bg-rose-50/40 border-rose-200'
-                                            : 'bg-amber-50/40 border-amber-200'
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center space-x-1.5">
-                                          <Briefcase className="w-4 h-4 text-slate-600" />
-                                          <span className="text-xs font-black text-slate-900">{posSlot.positionName}</span>
+                                    return (
+                                      <div 
+                                        key={idx} 
+                                        className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 ${
+                                          assignedWorker
+                                            ? 'bg-slate-50 border-slate-300'
+                                            : posSlot.required
+                                              ? 'bg-rose-50/40 border-rose-200'
+                                              : 'bg-amber-50/40 border-amber-200'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center space-x-1.5">
+                                            <Briefcase className="w-4 h-4 text-slate-600" />
+                                            <span className="text-xs font-black text-slate-900">{posSlot.positionName}</span>
+                                          </div>
+                                          {posSlot.required ? (
+                                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                                              Required
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                                              Optional
+                                            </span>
+                                          )}
                                         </div>
-                                        {posSlot.required ? (
-                                          <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
-                                            Required
-                                          </span>
+
+                                        {assignedWorker ? (
+                                          <div className={`p-2.5 rounded-xl border shadow-sm flex items-center justify-between ${
+                                            availabilities[assignedWorker.id]?.[shift.id] === 'unavailable'
+                                              ? 'bg-rose-50 border-rose-300'
+                                              : 'bg-white border-slate-300'
+                                          }`}>
+                                            <div className="flex items-center space-x-2">
+                                              <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] ${
+                                                availabilities[assignedWorker.id]?.[shift.id] === 'unavailable'
+                                                  ? 'bg-rose-200 text-rose-800'
+                                                  : 'bg-emerald-100 text-emerald-700'
+                                              }`}>
+                                                {availabilities[assignedWorker.id]?.[shift.id] === 'unavailable' ? '!' : '✓'}
+                                              </div>
+                                              <div>
+                                                <span className="text-xs font-bold text-slate-900 block">{assignedWorker.name}</span>
+                                                {availabilities[assignedWorker.id]?.[shift.id] === 'unavailable' && (
+                                                  <span className="text-[10px] text-rose-700 font-extrabold block">
+                                                    ⚠️ Conflict: Marked Unavailable!
+                                                  </span>
+                                                )}
+                                                {getRestrictionWarning(assignedWorker) && (
+                                                  <span className="text-[10px] text-amber-600 font-bold block">
+                                                    ⚠️ Warning: {getRestrictionWarning(assignedWorker)}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleAssignWorkerToPosition(shift.id, idx, '')}
+                                              className="text-xs text-rose-600 font-bold hover:underline px-2 py-1 bg-rose-50 rounded-lg"
+                                            >
+                                              Unassign
+                                            </button>
+                                          </div>
                                         ) : (
-                                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                                            Optional
-                                          </span>
+                                          <div className="space-y-2">
+                                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                                              Click available staff to assign:
+                                            </span>
+
+                                            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                                              {preferredWorkers.map(w => {
+                                                const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                                const warning = getRestrictionWarning(w);
+                                                return (
+                                                  <button
+                                                    key={w.id}
+                                                    type="button"
+                                                    disabled={alreadyInShift}
+                                                    onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                      alreadyInShift
+                                                        ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                        : warning
+                                                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                          : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                    }`}
+                                                    title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Preferred)'}
+                                                  >
+                                                    <Star className="w-3 h-3 fill-current text-amber-500" />
+                                                    <span>{formatShortName(w.name)}</span>
+                                                    {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
+                                                  </button>
+                                                );
+                                              })}
+
+                                              {availableWorkers.map(w => {
+                                                const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                                const warning = getRestrictionWarning(w);
+                                                return (
+                                                  <button
+                                                    key={w.id}
+                                                    type="button"
+                                                    disabled={alreadyInShift}
+                                                    onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                      alreadyInShift
+                                                        ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                        : warning
+                                                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
+                                                          : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
+                                                    }`}
+                                                    title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Available)'}
+                                                  >
+                                                    <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                                    <span>{formatShortName(w.name)}</span>
+                                                    {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
+                                                  </button>
+                                                );
+                                              })}
+
+                                              {noResponseWorkers.map(w => {
+                                                const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                                const warning = getRestrictionWarning(w);
+                                                return (
+                                                  <button
+                                                    key={w.id}
+                                                    type="button"
+                                                    disabled={alreadyInShift}
+                                                    onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
+                                                      alreadyInShift
+                                                        ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-sm'
+                                                    }`}
+                                                    title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign'}
+                                                  >
+                                                    <span>{formatShortName(w.name)}</span>
+                                                    {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
+                                                  </button>
+                                                );
+                                              })}
+
+                                              {unavailableWorkers.map(w => {
+                                                const alreadyInShift = isWorkerAssignedInShift(w.id);
+                                                return (
+                                                  <button
+                                                    key={w.id}
+                                                    type="button"
+                                                    disabled={alreadyInShift}
+                                                    onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
+                                                    className="text-[10px] font-semibold px-2 py-1 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 opacity-75"
+                                                    title="Marked Unavailable - Click to override & assign"
+                                                  >
+                                                    ✕ {formatShortName(w.name)}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
                                         )}
                                       </div>
-
-                                      {assignedWorker ? (
-                                        <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-300 shadow-sm">
-                                          <div className="flex items-center space-x-2">
-                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">
-                                              ✓
-                                            </div>
-                                            <div>
-                                              <span className="text-xs font-bold text-slate-900 block">{assignedWorker.name}</span>
-                                              {getRestrictionWarning(assignedWorker) && (
-                                                <span className="text-[10px] text-amber-600 font-bold block flex items-center gap-1">
-                                                  <AlertCircle className="w-3 h-3" /> Warning: {getRestrictionWarning(assignedWorker)}
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleAssignWorkerToPosition(shift.id, idx, '')}
-                                            className="text-xs text-rose-600 font-bold hover:underline px-2 py-1 bg-rose-50 rounded-lg"
-                                          >
-                                            Unassign
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="space-y-2">
-                                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-                                            Click available staff to assign:
-                                          </span>
-
-                                          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-                                            {preferredWorkers.map(w => {
-                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
-                                              const warning = getRestrictionWarning(w);
-                                              return (
-                                                <button
-                                                  key={w.id}
-                                                  type="button"
-                                                  disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
-                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
-                                                    alreadyInShift
-                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
-                                                      : warning
-                                                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
-                                                        : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm'
-                                                  }`}
-                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Preferred)'}
-                                                >
-                                                  <Star className="w-3 h-3 fill-current text-amber-500" />
-                                                  <span>{formatShortName(w.name)}</span>
-                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
-                                                </button>
-                                              );
-                                            })}
-
-                                            {availableWorkers.map(w => {
-                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
-                                              const warning = getRestrictionWarning(w);
-                                              return (
-                                                <button
-                                                  key={w.id}
-                                                  type="button"
-                                                  disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
-                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
-                                                    alreadyInShift
-                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
-                                                      : warning
-                                                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-sm'
-                                                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-sm'
-                                                  }`}
-                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign (Available)'}
-                                                >
-                                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
-                                                  <span>{formatShortName(w.name)}</span>
-                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
-                                                </button>
-                                              );
-                                            })}
-
-                                            {noResponseWorkers.map(w => {
-                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
-                                              const warning = getRestrictionWarning(w);
-                                              return (
-                                                <button
-                                                  key={w.id}
-                                                  type="button"
-                                                  disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
-                                                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border flex items-center space-x-1 transition ${
-                                                    alreadyInShift
-                                                      ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
-                                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-sm'
-                                                  }`}
-                                                  title={alreadyInShift ? 'Already assigned' : warning ? `Restriction Warning: ${warning}` : 'Click to assign'}
-                                                >
-                                                  <span>{formatShortName(w.name)}</span>
-                                                  {warning && <span className="text-[9px] text-amber-700 ml-0.5">⚠️</span>}
-                                                </button>
-                                              );
-                                            })}
-
-                                            {unavailableWorkers.map(w => {
-                                              const alreadyInShift = isWorkerAssignedInShift(w.id);
-                                              return (
-                                                <button
-                                                  key={w.id}
-                                                  type="button"
-                                                  disabled={alreadyInShift}
-                                                  onClick={() => handleAssignWorkerToPosition(shift.id, idx, w.id)}
-                                                  className="text-[10px] font-semibold px-2 py-1 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 opacity-75"
-                                                  title="Marked Unavailable - Click to override & assign"
-                                                >
-                                                  ✕ {formatShortName(w.name)}
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
