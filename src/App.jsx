@@ -1860,8 +1860,12 @@ export default function App() {
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={() => handleDeleteShift(shift.id)}
+                             <button
+                                onClick={() => {
+                                  if (window.confirm(`Are you sure you want to delete the shift on ${formatDate(shift.date)} (${formatTime12h(shift.startTime)} - ${formatTime12h(shift.endTime)})?`)) {
+                                    handleDeleteShift(shift.id);
+                                  }
+                                }}
                                 className="text-white/80 hover:text-white p-1 transition"
                                 title="Delete Shift"
                               >
